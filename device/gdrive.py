@@ -1,12 +1,15 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-
 import sys, os
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 
-sys.path.append("~/fex_daily/device")
-
+'''
+Homepage: https://pypi.python.org/pypi/PyDrive
+Documentation: Official documentation on GitHub pages
+Github: https://github.com/googledrive/PyDrive
+Quickstart: https://pythonhosted.org/PyDrive/quickstart.html
+'''
 class gdrive():
 
     path=os.path.dirname(__file__)
@@ -17,7 +20,6 @@ class gdrive():
 
     def __init__(self):
         creds_file_path=os.path.join(self.path, "mycreds.txt")
-        #print(creds_file_path)
         gauth=GoogleAuth()
         # Try to load saved client credentials
         gauth.LoadCredentialsFile(creds_file_path)
@@ -87,7 +89,12 @@ class gdrive():
 
 if __name__ == '__main__':
 
-    oid=gdrive().getIdByName('Daily_2018_08_17.zip', gdrive().fut_rpt_id)
+    '''funtion library
+    #gdrive().getIdByName(name, target_id):
+    #gdrive().GetContentFile(file_path, target_id, _mimetype='application/zip'):
+    #gdrive().UploadFile(file_path, target_id, _mimetype='application/zip'):
+    '''
+    oid=gdrive().getIdByName('Daily_2018_10_04.zip', gdrive().fut_rpt_id)
     #gdrive().GetContentFile('/home/luke/fex_daily/trash/aa.zip', oid)
     #gdrive().UploadFile('/home/luke/fex_daily/trash/aa.zip', gdrive().fut_rpt_id)
     #gdrive().fut_rpt_id
