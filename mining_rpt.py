@@ -33,12 +33,12 @@ class mining_rpt():
             'fut_rpt':{
                 'filename':"Daily_%s.zip" %self.date,
                 'url':'https://www.taifex.com.tw/DailyDownload/DailyDownload',
-                'gdrive_id': gdrive().__class__.__dict__.get('fut_rpt_id', None)
+                'gdrive_id': _gdrive.__class__.__dict__.get('fut_rpt_id', None)
             },
             'opt_rpt':{
                 'filename':"OptionsDaily_%s.zip" %self.date,
                 'url':"http://www.taifex.com.tw/DailyDownload/OptionsDailyDownload",
-                'gdrive_id': gdrive().__class__.__dict__.get('opt_rpt_id', None)
+                'gdrive_id': _gdrive.__class__.__dict__.get('opt_rpt_id', None)
             }
         }
         try:
@@ -51,11 +51,6 @@ class mining_rpt():
 
     def download_rpt(self):
 
-        try:
-            os.mkdir(self.rptdirpath)
-        except:
-            pass
-
         def checkZipFile(path):
             try:
                 zip_file=zipfile.ZipFile(path)
@@ -66,6 +61,11 @@ class mining_rpt():
             except zipfile.BadZipfile:
                 os.remove(path)
                 print('\nBadZipfile: remove %s' %path)
+
+        try:
+            os.mkdir(self.rptdirpath)
+        except:
+            pass
 
         storepath=os.path.join(self.rptdirpath, self.filename)
         if args.recover==False and os.path.exists(storepath):
@@ -85,7 +85,7 @@ class mining_rpt():
             pass
 
         if os.path.isdir(self.rptdirpath):
-            print('Exist: %s' %self.rptdirpath)
+            print('Exist on local: %s' %self.rptdirpath)
             for dirname, dirnames, filenames in os.walk(self.rptdirpath):
                 #print(dirname, dirnames, filenames)
                 if dirname == self.rptdirpath:
@@ -117,20 +117,20 @@ class mining_rpt():
             with zipfile.ZipFile(local, 'r') as zf:
                 for rptname in zf.namelist():
                     zf.extract(rptname, exdir)
-            print('unzip %s: done' %local)
+            print('Unzip file done: %s' %local)
         except zipfile.BadZipfile:
             os.remove(path)
             print('\nBadZipfile: %s not exist' %local)
             sys.exit()
 
-    def upload_gdrive(self, daily_info):
+    def upload_gdrive(self, daily_info, rc):
 
         file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
 
         if os.path.exists(file_abspath):
-            gdrive().UploadFile(file_abspath, daily_info.gdrive_dir_id)
+            _gdrive.UploadFile(file_abspath, daily_info.gdrive_dir_id, recover=rc)
         else:
-            print('upload file path is not exist')
+            print('Warning: file path is not exist')
 
     def parser_rpt_to_DB(self, daily_info):
         rpt_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, 'tmp', daily_info.filename)).replace('.zip', '.rpt')
@@ -141,10 +141,10 @@ class mining_rpt():
         if not os.path.isfile(rpt_file_abspath):
             zip_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
             if not os.path.isfile(zip_file_abspath):
-                oid=gdrive().getIdByName(daily_info.filename, daily_info.gdrive_dir_id)
+                oid=_gdrive.getIdByName(daily_info.filename, daily_info.gdrive_dir_id)
                 if oid==None:
                     return None
-                gdrive().GetContentFile(zip_file_abspath, oid)
+                _gdrive.GetContentFile(zip_file_abspath, oid)
             self.unzip_file(zip_file_abspath, os.path.join(daily_info.rptdirpath, 'tmp'))
 
         ## Confirmation item(TX, mouth), grep next month if not found this month
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     #before_date=int(sys.argv[1]) if len(sys.argv)>1 else 1
     parser=argparse.ArgumentParser()
     parser.add_argument("-d", "--date", type=str, default=datetime.today().strftime('%Y%m%d'), \
-                        help="download rpt $DATE~today, tpye=str ex:20180101.")
+                        help="download rpt $DATE~today, tpye=str ex:20180101")
     parser.add_argument("-r", "--recover", type=bool, default=False, help="flag with $RECOVER, tpye=bool.")
     args=parser.parse_args()
 
@@ -240,15 +240,17 @@ if __name__ == '__main__':
     date=date if args.date!=None and date<today else today+timedelta(days=-1)
     diff_days=(date-today).days+1
 
+    _gdrive=gdrive()
     # every daily
     for i in range(diff_days, 1, 1):
         date=(today+timedelta(days=i)).strftime('%Y_%m_%d')
 
         for j in items[:2]:
+            print('#Mining: %s, %s' %(j, date))
             daily_mining=mining_rpt(j, date=date)
 
             daily_mining.download_rpt()
-            daily_mining.upload_gdrive(daily_mining)
+            daily_mining.upload_gdrive(daily_mining, rc=args.recover)
             if j=='fut_rpt':
                 daily_mining.parser_rpt_to_DB(daily_mining)
                 #sys.exit()
