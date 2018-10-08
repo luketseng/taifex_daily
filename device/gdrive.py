@@ -16,6 +16,8 @@ class gdrive():
     rpt_id='1kPoq8OgxJ-FDPweFleGpPt_D6jA8Ndm-'
     fut_rpt_id='12UAi5f_XU6oaYbhIzU4iRohsd2V5i3V2'
     opt_rpt_id='1GYaukGZrR3Kj3ubexwXDTwkJWkeyMEPE'
+    fut_dir_list=None
+    opt_dir_list=None
     drive=None
 
     def __init__(self):
@@ -36,18 +38,27 @@ class gdrive():
         gauth.SaveCredentialsFile(creds_file_path)
         self.drive=GoogleDrive(gauth)
 
+        if self.fut_dir_list==None or self.opt_dir_list==None:
+            try:
+                print('loading dir list...')
+                query="'%s' in parents and trashed=false" %self.fut_rpt_id
+                self.fut_dir_list=self.drive.ListFile({'q': query}).GetList()
+                query="'%s' in parents and trashed=false" %self.opt_rpt_id
+                self.opt_dir_list=self.drive.ListFile({'q': query}).GetList()
+            except:
+                print('Error: dir list not found')
+
     def getIdByName(self, name, target_id):
         # Paginate file lists by specifying number of max results
-        query="'%s' in parents and trashed=false" %target_id
-        i=1
-        for file_list in self.drive.ListFile({'q': query, 'maxResults': 10}):
-            print('Received %s files from Files.list(%s)' %(len(file_list), i)) # <= 10
-            i+=1
-            for file_obj in file_list:
-                print(file_obj['title'])
-                if file_obj['title']==name:
-                    print('title: %s, id: %s' % (file_obj['title'], file_obj['id']))
-                    return file_obj['id']
+        if target_id==self.fut_rpt_id:
+            file_list=self.fut_dir_list
+        elif target_id==self.opt_rpt_id:
+            file_list=self.opt_dir_list
+        for file_obj in file_list:
+            print(file_obj['title'])
+            if file_obj['title']==name:
+                print('title: %s, id: %s' % (file_obj['title'], file_obj['id']))
+                return file_obj['id']
         return None
 
     def GetContentFile(self, file_path, target_id, _mimetype='application/zip'):
@@ -58,32 +69,29 @@ class gdrive():
         print('Downloading file %s from Google Drive' % file_obj['title'])
         # Save Drive file as a local file
         file_obj.GetContentFile(file_path, mimetype=_mimetype)
-        print('file is on local path: %s' %file_path)
+        print('Done: path=%s' %file_path)
 
-    def UploadFile(self, file_path, target_id, _mimetype='application/zip'):
+    def UploadFile(self, file_path, target_id, _mimetype='application/zip', recover=True):
         # Upload(): upload file(file_path) to grive(target_id)
+        file_name=os.path.split(file_path)[1]
         try:
-            #dir_path=os.path.split(localpath)[0]
-            file_name=os.path.split(file_path)[1]
-            #print(file_name, target_id)
-            #query="'%s' in parents and trashed=false" %target_id
-            #file_list=self.drive.ListFile({'q': query}).GetList();
+            if target_id==self.fut_rpt_id:
+                file_list=self.fut_dir_list
+            elif target_id==self.opt_rpt_id:
+                file_list=self.opt_dir_list
 
-            #for tmp in file_list:
-            #    if tmp['title']==file_name:
-            #        print(tmp['title'], tmp['id'])
-            #        # Create GoogleDriveFile instance
-            #        oid=gdrive().getIdByName(file_name, target_id)
-            #        file_obj=self.drive.CreateFile({"title": file_name, "id": oid,})
-            #        break
-            #    else:
-            #        # Create GoogleDriveFile instance
-            #        file_obj=self.drive.CreateFile({"title": file_name, "parents": [{"id": target_id}]})
+            # delete file if file exist in gdrive
+            for obj in file_list:
+                if obj['title']==file_name and recover==True:
+                    print('Exist on drive: title=%s, id=%s' %(obj['title'], obj['id']))
+                    obj.Delete()
+                    print('Delete file on drive')
 
+            # Create GoogleDriveFile instance
             file_obj=self.drive.CreateFile({"title": file_name, "parents": [{"id": target_id}]})
             file_obj.SetContentFile(file_path)
             file_obj.Upload()
-            print('Upload file %s with mimeType %s' % (file_obj['title'], file_obj['mimeType']))
+            print('Upload file: %s with mimeType %s' % (file_obj['title'], file_obj['mimeType']))
         except :
             print("Unexpected error:", sys.exc_info()[0])
 
@@ -94,7 +102,8 @@ if __name__ == '__main__':
     #gdrive().GetContentFile(file_path, target_id, _mimetype='application/zip'):
     #gdrive().UploadFile(file_path, target_id, _mimetype='application/zip'):
     '''
-    oid=gdrive().getIdByName('Daily_2018_10_04.zip', gdrive().fut_rpt_id)
+    #print(type(gdrive().fut_dir_list[0]))
+    #oid=gdrive().getIdByName('Daily_2018_10_04.zip', gdrive().fut_rpt_id)
     #gdrive().GetContentFile('/home/luke/fex_daily/trash/aa.zip', oid)
     #gdrive().UploadFile('/home/luke/fex_daily/trash/aa.zip', gdrive().fut_rpt_id)
     #gdrive().fut_rpt_id
