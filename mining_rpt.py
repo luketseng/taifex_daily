@@ -209,11 +209,23 @@ class mining_rpt():
             sys.stdout.flush()
         sys.stdout.write('\n')
 
+        #print(repr(req[0])+'\n'+repr(req[839])+'\n'+repr(req[-1]))
         ## query to DB
         conn=sqlite3.connect(os.path.abspath(daily_info.path)+'/FCT_DB.db')
         cursor=conn.cursor()
+        SQL_Detete1="DELETE FROM tw%s WHERE Date=\'%s\' and Time>=\'%s\';" %("TX",req[0][0],req[0][1])
+        SQL_Detete2="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[839][0],req[839][1])
+        SQL_Detete3="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[-1][0],req[-1][1])
         SQL="INSERT INTO tw%s VALUES (?,?,?,?,?,?,?);" %"TX"
 
+        ## delete old data
+        if req[0][1]=='15:01:00':
+            cursor.execute(SQL_Detete1)
+            cursor.execute(SQL_Detete2)
+        cursor.execute(SQL_Detete3)
+        conn.commit()
+
+        ## insert new data
         for i in range(len(req)):
             cursor.execute(SQL, req[i])
         conn.commit()
