@@ -232,6 +232,45 @@ class mining_rpt():
         conn.close()
         print(tmp, len(req))
 
+    def export_sql_to_txt(self, date_list):
+        #print(date)
+        date=datetime.strptime(date_list[0], "%Y%m%d").strftime('%Y/%m/%d')
+        conn=sqlite3.connect(os.path.abspath(os.path.dirname(__file__))+'/FCT_DB.db')
+        size=300 if len(date_list)==2 else int(date_list[2])
+        cursor=conn.cursor()
+        export_str='Date,Time,Open,High,Low,Close,Volume\n'
+        #SQL1="SELECT Date, MAX(High), MIN(Low), SUM(Volume) FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %("TX", date)
+
+        while True:
+            SQL="SELECT * FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %("TX", date)
+            cursor.execute(SQL)
+            if size==1:
+                req=cursor.fetchall()
+                if req:
+                    for i in req:
+                        export_str+=(str(map(str, i)).strip("\[").strip("\]").replace("\'", "").replace(" ", ""))+'\n'
+            else:
+                while True:
+                    req=cursor.fetchmany(size)
+                    if not req:
+                        break
+                    else:
+                        #print(req)
+                        (High, Low, Vol)=(req[0][3], req[0][3], 0)
+                        for i in req:
+                            High=i[3] if i[3]>High else High
+                            Low=i[4] if i[4]<Low else Low
+                            Vol+=i[6]
+                        Close_time=req[-1][1]
+                        if req[-1][1]=='13:30:00': Close_time='13:45:00'
+                        export_str+='%s,%s,%s,%s,%s,%s,%s\n' %(req[-1][0], Close_time, req[0][2], High, Low, req[-1][5], Vol)
+
+            date=(datetime.strptime(date, "%Y/%m/%d")+timedelta(days=1)).strftime('%Y/%m/%d')
+            if datetime.strptime(date, "%Y/%m/%d")>datetime.strptime(date_list[1], "%Y%m%d"):
+                print(export_str)
+                break
+        sys.exit()
+
 ## library of gdrive
 #oid=gdrive().getIdByName('Daily_2018_08_15.zip', gdrive().fut_rpt_id)
 #gdrive().GetContentFile('/home/luke/fex_daily/trash/aa.zip', oid)
@@ -243,6 +282,7 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--date", type=str, default=datetime.today().strftime('%Y%m%d'), \
                         help="download rpt $DATE~today, tpye=str ex:20180101")
     parser.add_argument("-r", "--recover", type=bool, default=False, help="flag with $RECOVER, tpye=bool.")
+    parser.add_argument("-s", "--search", nargs='+', type=str, default=None, help="Date1 Date2 size, tpye=str ex:-s 20180101 20180102 30")
     args=parser.parse_args()
 
     items=('fut_rpt', 'opt_rpt')
@@ -251,6 +291,14 @@ if __name__ == '__main__':
     date=datetime.strptime(args.date, "%Y%m%d")
     date=date if args.date!=None and date<today else today+timedelta(days=-1)
     diff_days=(date-today).days+1
+
+    _gdrive=None
+    if args.search!=None:
+        if len(args.search)<2:
+            print('error arg: '+repr(args.search))
+            sys.exit()
+        mining_rpt().export_sql_to_txt(args.search)
+        sys.exit()
 
     _gdrive=gdrive()
     # every daily
@@ -266,7 +314,6 @@ if __name__ == '__main__':
             if j=='fut_rpt':
                 daily_mining.parser_rpt_to_DB(daily_mining)
                 #sys.exit()
-            #daily_mining.get_$timestep_data_$datebydate_from_DB(daily_mining, $timestep, $day1, $day2)
 
     # unzip_all2rptdir for once
     for i in items[:0]:
