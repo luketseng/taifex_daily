@@ -167,7 +167,7 @@ class mining_rpt():
 
             ## 150000-235900, (跨日判斷)000000-050000(多筆), 084500-134500(多筆)
             if i==0:
-                (Open, High, Low, Close, Volume)=(_price, _price, _price, _price, _volume)
+                (Open, High, Low, Close, Volume)=(_price, _price, _price, _price, 0)
                 open_time=datetime.strptime(_date+_time[:-2], '%Y%m%d%H%M')
                 step_time=open_time+timedelta(minutes=1)
                 (date, fut, futc, endtime)=map(str.strip, textlist[-1].split(',')[:4])
@@ -209,20 +209,20 @@ class mining_rpt():
             sys.stdout.flush()
         sys.stdout.write('\n')
 
-        #print(repr(req[0])+'\n'+repr(req[839])+'\n'+repr(req[-1]))
         ## query to DB
         conn=sqlite3.connect(os.path.abspath(daily_info.path)+'/FCT_DB.db')
         cursor=conn.cursor()
-        SQL_Detete1="DELETE FROM tw%s WHERE Date=\'%s\' and Time>=\'%s\';" %("TX",req[0][0],req[0][1])
-        SQL_Detete2="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[839][0],req[839][1])
-        SQL_Detete3="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[-1][0],req[-1][1])
+        #print(repr(req[0])+'\n'+repr(req[839])+'\n'+repr(req[-1]))
         SQL="INSERT INTO tw%s VALUES (?,?,?,?,?,?,?);" %"TX"
+        SQL_Detete="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[-1][0],req[-1][1])
 
         ## delete old data
+        cursor.execute(SQL_Detete)
         if req[0][1]=='15:01:00':
+            SQL_Detete1="DELETE FROM tw%s WHERE Date=\'%s\' and Time>=\'%s\';" %("TX",req[0][0],req[0][1])
+            SQL_Detete2="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[839][0],req[839][1])
             cursor.execute(SQL_Detete1)
             cursor.execute(SQL_Detete2)
-        cursor.execute(SQL_Detete3)
         conn.commit()
 
         ## insert new data
