@@ -40,13 +40,13 @@ class gdrive():
 
         if self.fut_dir_list==None or self.opt_dir_list==None:
             try:
-                print('loading dir list...')
+                print('Loading file list from gdrive...')
                 query="'%s' in parents and trashed=false" %self.fut_rpt_id
                 self.fut_dir_list=self.drive.ListFile({'q': query}).GetList()
                 query="'%s' in parents and trashed=false" %self.opt_rpt_id
                 self.opt_dir_list=self.drive.ListFile({'q': query}).GetList()
             except:
-                print('Error: dir list not found')
+                print('Except: file list error')
 
     def getIdByName(self, name, target_id):
         # Paginate file lists by specifying number of max results
@@ -55,9 +55,9 @@ class gdrive():
         elif target_id==self.opt_rpt_id:
             file_list=self.opt_dir_list
         for file_obj in file_list:
-            print(file_obj['title'])
+            #print(file_obj['title'])
             if file_obj['title']==name:
-                print('title: %s, id: %s' % (file_obj['title'], file_obj['id']))
+                print('getIdByName(): title=%s, id=%s' % (file_obj['title'], file_obj['id']))
                 return file_obj['id']
         return None
 
@@ -66,10 +66,10 @@ class gdrive():
             return target_id
         # GetContentFile(): download file(filepath) from gdrive(target_id)
         file_obj=self.drive.CreateFile({'id': target_id})
-        print('Downloading file %s from Google Drive' % file_obj['title'])
+        print('Downloading file: %s from gdrive' % file_obj['title'])
         # Save Drive file as a local file
         file_obj.GetContentFile(file_path, mimetype=_mimetype)
-        print('Done: path=%s' %file_path)
+        print('Download done: path=%s' %file_path)
 
     def UploadFile(self, file_path, target_id, _mimetype='application/zip', recover=True):
         # Upload(): upload file(file_path) to grive(target_id)
@@ -83,9 +83,9 @@ class gdrive():
             # delete file if file exist in gdrive
             for obj in file_list:
                 if obj['title']==file_name and recover==True:
-                    print('Exist on drive: title=%s, id=%s' %(obj['title'], obj['id']))
+                    print('File exist on gdrive: title=%s, id=%s' %(obj['title'], obj['id']))
                     obj.Delete()
-                    print('Delete file on drive')
+                    print('Delete file in gdrive')
 
             # Create GoogleDriveFile instance
             file_obj=self.drive.CreateFile({"title": file_name, "parents": [{"id": target_id}]})
