@@ -132,7 +132,7 @@ class mining_rpt():
         else:
             print('Warning: file path is not exist')
 
-    def parser_rpt_to_DB(self, daily_info):
+    def parser_rpt_to_DB(self, daily_info, fut='TX'):
         rpt_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, 'tmp', daily_info.filename)).replace('.zip', '.rpt')
         ## split rpt_file_abspath to list ex. ['Daily', '2018', '05', '08', 'zip']
         fname_list=re.split('_|\.', daily_info.filename)
@@ -150,10 +150,10 @@ class mining_rpt():
         ## Confirmation item(TX, mouth), grep next month if not found this month
         if fname_list[0]=='Daily':
             futc=''.join(fname_list[1:3])
-            get_fut=os.popen("cat %s | grep ,TX | grep -P '%s\s+'" %(rpt_file_abspath, futc)).read().strip()
+            get_fut=os.popen("cat %s | grep ,%s | grep -P '%s\s+'" %(rpt_file_abspath, fut, futc)).read().strip()
             if get_fut=='':
                 futc=(datetime.strptime(futc, '%Y%m')+timedelta(days=31)).strftime('%Y%m')
-                get_fut=os.popen("cat %s | grep ,TX | grep -P '%s\s+'" %(rpt_file_abspath, futc)).read().strip()
+                get_fut=os.popen("cat %s | grep ,%s | grep -P '%s\s+'" %(rpt_file_abspath, fut, futc)).read().strip()
         textlist=get_fut.split('\n')
 
         ## Mining 150000-050000, 084500-134500
@@ -213,14 +213,14 @@ class mining_rpt():
         conn=sqlite3.connect(os.path.abspath(daily_info.path)+'/FCT_DB.db')
         cursor=conn.cursor()
         #print(repr(req[0])+'\n'+repr(req[839])+'\n'+repr(req[-1]))
-        SQL="INSERT INTO tw%s VALUES (?,?,?,?,?,?,?);" %"TX"
-        SQL_Detete="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[-1][0],req[-1][1])
+        SQL="INSERT INTO tw%s VALUES (?,?,?,?,?,?,?);" %fut
+        SQL_Detete="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %(fut, req[-1][0],req[-1][1])
 
         ## delete old data
         cursor.execute(SQL_Detete)
         if req[0][1]=='15:01:00':
-            SQL_Detete1="DELETE FROM tw%s WHERE Date=\'%s\' and Time>=\'%s\';" %("TX",req[0][0],req[0][1])
-            SQL_Detete2="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %("TX", req[839][0],req[839][1])
+            SQL_Detete1="DELETE FROM tw%s WHERE Date=\'%s\' and Time>=\'%s\';" %(fut, req[0][0],req[0][1])
+            SQL_Detete2="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %(fut, req[839][0],req[839][1])
             cursor.execute(SQL_Detete1)
             cursor.execute(SQL_Detete2)
         conn.commit()
@@ -236,13 +236,14 @@ class mining_rpt():
         #print(date)
         date=datetime.strptime(date_list[0], "%Y%m%d").strftime('%Y/%m/%d')
         conn=sqlite3.connect(os.path.abspath(os.path.dirname(__file__))+'/FCT_DB.db')
-        size=300 if len(date_list)==2 else int(date_list[2])
+        size=int(date_list[2]) if len(date_list)>2 else 300
+        fut=date_list[3] if len(date_list)>3 else 'TX'
         cursor=conn.cursor()
         export_str='Date,Time,Open,High,Low,Close,Volume\n'
         #SQL1="SELECT Date, MAX(High), MIN(Low), SUM(Volume) FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %("TX", date)
 
         while True:
-            SQL="SELECT * FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %("TX", date)
+            SQL="SELECT * FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %(fut, date)
             cursor.execute(SQL)
             if size==1:
                 req=cursor.fetchall()
@@ -312,7 +313,8 @@ if __name__ == '__main__':
             daily_mining.download_rpt()
             daily_mining.upload_gdrive(daily_mining, rc=args.recover)
             if j=='fut_rpt':
-                daily_mining.parser_rpt_to_DB(daily_mining)
+                daily_mining.parser_rpt_to_DB(daily_mining, 'TX')
+                daily_mining.parser_rpt_to_DB(daily_mining, 'MTX')
                 #sys.exit()
 
     # unzip_all2rptdir for once
