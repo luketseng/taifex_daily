@@ -233,15 +233,16 @@ class mining_rpt():
         print(tmp, len(req))
 
     def export_sql_to_txt(self, date_list):
-        #print(date)
+
         date=datetime.strptime(date_list[0], "%Y%m%d").strftime('%Y/%m/%d')
+        #print(date_list.__len__())
+        fut=date_list[2] if len(date_list)>2 else 'TX'
+        size=int(date_list[3]) if len(date_list)>3 else 300
         conn=sqlite3.connect(os.path.abspath(os.path.dirname(__file__))+'/FCT_DB.db')
-        size=int(date_list[2]) if len(date_list)>2 else 300
-        fut=date_list[3] if len(date_list)>3 else 'TX'
         cursor=conn.cursor()
-        export_str='Date,Time,Open,High,Low,Close,Volume\n'
         #SQL1="SELECT Date, MAX(High), MIN(Low), SUM(Volume) FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %("TX", date)
 
+        export_str='Date,Time,Open,High,Low,Close,Volume\n'
         while True:
             SQL="SELECT * FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %(fut, date)
             cursor.execute(SQL)
@@ -283,7 +284,7 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--date", type=str, default=datetime.today().strftime('%Y%m%d'), \
                         help="download rpt $DATE~today, tpye=str ex:20180101")
     parser.add_argument("-r", "--recover", type=bool, default=False, help="flag with $RECOVER, tpye=bool.")
-    parser.add_argument("-s", "--search", nargs='+', type=str, default=None, help="Date1 Date2 size, tpye=str ex:-s 20180101 20180102 30")
+    parser.add_argument("-e", "--export", nargs='+', type=str, default=None, help="Date1 Date2 Future(TX) Interval(300), tpye=str ex:-e 20180101 20180102 TX 300")
     args=parser.parse_args()
 
     items=('fut_rpt', 'opt_rpt')
@@ -293,15 +294,13 @@ if __name__ == '__main__':
     date=date if args.date!=None and date<today else today+timedelta(days=-1)
     diff_days=(date-today).days+1
 
-    _gdrive=None
-    if args.search!=None:
-        if len(args.search)<2:
-            print('error arg: '+repr(args.search))
-            sys.exit()
-        mining_rpt().export_sql_to_txt(args.search)
+    _gdrive=None if args.export!=None else gdrive()
+    if len(args.export)>1 and len(args.export)<5:
+        mining_rpt().export_sql_to_txt(args.export)
+    else:
+        print('error arg: '+repr(args.export)+', ex:-e 20180101 20180102 TX 300')
         sys.exit()
 
-    _gdrive=gdrive()
     # every daily
     for i in range(diff_days, 1, 1):
         date=(today+timedelta(days=i)).strftime('%Y_%m_%d')
