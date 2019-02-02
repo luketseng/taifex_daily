@@ -1,7 +1,28 @@
-# taifex_daily
-This is project for backup history from taifex.
+taifex_daily
+-------
+This is project can help for backup history of taifex. 
 
-# install pyDirve
+How to install
+--------------
+1. You can install PyDrive with regular ``pip`` command.
+
+    $ pip install PyDrive
+
+reference url:
 https://github.com/gsuitedevs/PyDrive/blob/master/README.rst
 
-# Go to APIs Console and make your own project.
+2. Go to APIs Console and make your own project and create certificate.
+https://console.cloud.google.com/apis/credentials
+
+3. Download JSON certificate and rename to "client_secret.json" in ~/taifex_daily/device/
+
+4. FCT_DB.db store history of taifex in ~/taifex_daily/ (share FCT_DB.db later)
+
+PS. maybe you need to install "wget" with ``pip``
+
+    $ pip install wget
+ 
+Example
+--------------
+./mining_rpt.py -d 20190101
+./mining_rpt.py -e 20180101 20180102 TX 300
