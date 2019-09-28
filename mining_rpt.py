@@ -295,7 +295,9 @@ if __name__ == '__main__':
     diff_days=(date-today).days+1
 
     _gdrive=None if args.export!=None else gdrive()
-    if len(args.export)>1 and len(args.export)<5:
+    if args.export==None:
+        pass
+    elif args.export!=None and len(args.export)>1 and len(args.export)<5:
         mining_rpt().export_sql_to_txt(args.export)
     else:
         print('error arg: '+repr(args.export)+', ex:-e 20180101 20180102 TX 300')
