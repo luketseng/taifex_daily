@@ -1,6 +1,6 @@
 taifex_daily
 -------
-This is project can help for backup history of taifex. 
+This is project can help for backup history of taifex.
 
 How to install
 --------------
@@ -12,7 +12,7 @@ How to install
     https://github.com/gsuitedevs/PyDrive/blob/master/README.rst
 
 2. Go to APIs Console and make your own project and create certificate.
-    
+
     https://console.cloud.google.com/apis/credentials
 
 3. Download JSON certificate and rename to "client_secret.json" in ~/taifex_daily/device/
@@ -22,8 +22,9 @@ How to install
 PS. maybe you need to install "wget" with ``pip``
 
     $ pip install wget
- 
+
 Example
 --------------
-./mining_rpt.py -d 20190101
-./mining_rpt.py -e 20180101 20180102 TX 300
+
+    $ ./mining_rpt.py -d 20190101
+    $ ./mining_rpt.py -e 20180101 20180102 TX 300
