@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import sys, os
+import logging
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 
@@ -10,6 +11,19 @@ Documentation: Official documentation on GitHub pages
 Github: https://github.com/googledrive/PyDrive
 Quickstart: https://pythonhosted.org/PyDrive/quickstart.html
 '''
+
+#logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s %(name)s - %(levelname)-s: %(message)s')
+#logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
+#logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
+logger=logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+console=logging.StreamHandler(sys.stdout)
+console.setLevel(logging.INFO)
+formatter=logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
+console.setFormatter(formatter)
+logger.addHandler(console)
+
 class gdrive():
 
     path=os.path.dirname(__file__)
@@ -40,13 +54,15 @@ class gdrive():
 
         if self.fut_dir_list==None or self.opt_dir_list==None:
             try:
-                print('Loading file list from gdrive...')
+                logger.info('Loading file list from gdrive...')
+                #print('Loading file list from gdrive...')
                 query="'%s' in parents and trashed=false" %self.fut_rpt_id
                 self.fut_dir_list=self.drive.ListFile({'q': query}).GetList()
                 query="'%s' in parents and trashed=false" %self.opt_rpt_id
                 self.opt_dir_list=self.drive.ListFile({'q': query}).GetList()
             except:
-                print('Except: file list error')
+                logger.error('Except: file list error')
+                #print('Except: file list error')
 
     def getIdByName(self, name, target_id):
         # Paginate file lists by specifying number of max results
@@ -97,6 +113,8 @@ class gdrive():
 
 if __name__ == '__main__':
 
+    gdrive()
+    sys.exit()
     '''funtion library
     #gdrive().getIdByName(name, target_id):
     #gdrive().GetContentFile(file_path, target_id, _mimetype='application/zip'):
@@ -107,7 +125,6 @@ if __name__ == '__main__':
     #gdrive().GetContentFile('/home/luke/fex_daily/trash/aa.zip', oid)
     #gdrive().UploadFile('/home/luke/fex_daily/trash/aa.zip', gdrive().fut_rpt_id)
     #gdrive().fut_rpt_id
-    sys.exit()
 
 
     # Auto-iterate through all files in the root folder.

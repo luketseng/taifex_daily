@@ -7,16 +7,21 @@ This is a mining taifex history script.
 2. update to google drive.
 """
 
-import sys, os, time
+import sys, os
+import logging
 import zipfile, wget, argparse, re
 import sqlite3
 from datetime import datetime, timedelta
-from pathutils import sys_path_append
+from devices.gdrive import gdrive
 
-# append module
-#sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device'))
-sys_path_append('./device')
-from gdrive import gdrive
+logger=logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+console=logging.StreamHandler(sys.stdout)
+console.setLevel(logging.INFO)
+formatter=logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
+console.setFormatter(formatter)
+logger.addHandler(console)
 
 class mining_rpt():
     path=os.path.dirname(__file__)
@@ -287,6 +292,10 @@ if __name__ == '__main__':
     parser.add_argument("-e", "--export", nargs='+', type=str, default=None, help="Date1 Date2 Future(TX) Interval(300), tpye=str ex:-e 20180101 20180102 TX 300")
     args=parser.parse_args()
 
+    logger.info('{!s}'.format(args))
+    #_gdrive=None if args.export!=None else gdrive()
+    #mining_rpt()
+    #sys.exit()
     items=('fut_rpt', 'opt_rpt')
 
     today=datetime.today()
