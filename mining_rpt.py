@@ -8,20 +8,11 @@ This is a mining taifex history script.
 """
 
 import sys, os
-import logging
 import zipfile, wget, argparse, re
 import sqlite3
+import logging
 from datetime import datetime, timedelta
 from devices.gdrive import gdrive
-
-logger=logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-console=logging.StreamHandler(sys.stdout)
-console.setLevel(logging.INFO)
-formatter=logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
-console.setFormatter(formatter)
-logger.addHandler(console)
 
 class mining_rpt():
     path=os.path.dirname(__file__)
@@ -31,19 +22,24 @@ class mining_rpt():
     url=None
     gdrive_dir_id=None
     rptdirpath=None
+    item=None
 
-    def __init__(self, item='fut_rpt', date=None):
-        self.date=datetime.today().strftime('%Y_%m_%d') if date==None else date
+    def __init__(self, date, item='fut_rpt'):
+        global logger
+        self.date=today.strftime('%Y_%m_%d') if date==None else date
+        logger.info('Mining: {}, {}'.format(self.date, item))
+
+        '''get gdrive() device'''
         self.fex_info={
             'fut_rpt':{
-                'filename':"Daily_%s.zip" %self.date,
+                'filename':"Daily_{}.zip".format(self.date),
                 'url':'https://www.taifex.com.tw/DailyDownload/DailyDownload',
-                'gdrive_id': _gdrive.__class__.__dict__.get('fut_rpt_id', None)
+                'gdrive_id': _gdrive.__class__.__dict__['item_obj'].get('fut_rpt', None)['id']
             },
             'opt_rpt':{
-                'filename':"OptionsDaily_%s.zip" %self.date,
+                'filename':"OptionsDaily_{}.zip".format(self.date),
                 'url':"http://www.taifex.com.tw/DailyDownload/OptionsDailyDownload",
-                'gdrive_id': _gdrive.__class__.__dict__.get('opt_rpt_id', None)
+                'gdrive_id': _gdrive.__class__.__dict__['item_obj'].get('opt_rpt', None)['id']
             }
         }
         try:
@@ -51,8 +47,11 @@ class mining_rpt():
             self.url=self.fex_info[item]['url']
             self.gdrive_dir_id=self.fex_info[item]['gdrive_id']
             self.rptdirpath=os.path.join(self.path, item)
+            self.item=item
+            logger.info('self.gdrive_dir_id: {}'.format(self.gdrive_dir_id))
+            logger.info('ready to download {} to {} via url: {}'.format(self.filename, self.rptdirpath, self.url))
         except:
-            print('fex_info not found item')
+            logger.error('fex_info not found item')
 
     def download_rpt(self):
 
@@ -60,43 +59,39 @@ class mining_rpt():
             try:
                 zip_file=zipfile.ZipFile(path)
                 zip_file.testzip()
-                #os.system('unzip %s -d %s/tmp' %(path, os.path.dirname(__file__)))
                 zip_file.close()
-                print('\n%s: Download completed' %path)
+                logger.info('Download completed for {}'.format(path))
             except zipfile.BadZipfile:
                 os.remove(path)
-                print('\nBadZipfile: remove %s' %path)
+                logger.warning('BadZipfile: remove {}'.format(path))
 
-        try:
+        if not os.path.exists(self.rptdirpath):
             os.mkdir(self.rptdirpath)
-        except:
-            pass
 
         storepath=os.path.join(self.rptdirpath, self.filename)
         if args.recover==False and os.path.exists(storepath):
-            print('Exist: %s' %storepath)
+            logger.info('%s is exist' %storepath)
         else:
             file_url=os.path.join(self.url, self.filename)
-            os.system('wget -O %s %s' %(storepath, file_url))
-            #wget.download(file_url, savefile_path)
+            logger.info('wget {} via {}'.format(storepath, file_url))
+            os.system('wget -O {} {}'.format(storepath, file_url))
+            ## check zip is not empty
             checkZipFile(storepath)
 
     def unzip_all2rptdir(self):
-        print('Exteacting...unzip')
+        logger.info('Exteacting for all unzip...')
 
-        try:
-            os.mkdir(os.path.join(self.rptdirpath, 'tmp'))
-        except:
-            pass
+        tmp_path=os.path.join(self.rptdirpath, 'tmp')
+        if not os.path.exists(tmp_path):
+            os.mkdir(tmp_path)
 
         if os.path.isdir(self.rptdirpath):
-            print('Exist on local: %s' %self.rptdirpath)
+            logger.info('Exist on local: {}'.format(self.rptdirpath))
             for dirname, dirnames, filenames in os.walk(self.rptdirpath):
-                #print(dirname, dirnames, filenames)
                 if dirname == self.rptdirpath:
                     for filename in filenames:
                         file_abspath=os.path.abspath(os.path.join(dirname, filename))
-                        print(file_abspath, self.gdrive_dir_id)
+                        logger.debug(file_abspath, self.gdrive_dir_id)
                         try:
                             zip_file=zipfile.ZipFile(file_abspath)
                             zip_file.testzip()
@@ -107,49 +102,43 @@ class mining_rpt():
                         with zipfile.ZipFile(file_abspath, 'r') as zf:
                             for rptname in zf.namelist():
                                 zf.extract(rptname, os.path.join(dirname, 'tmp'))
-                                print(os.path.join(dirname, 'tmp', rptname)+' done')
-                                #print('upzip %s in %s/tmp' %(rptfile, ldir))
-            print('all %s file done in %s/tmp\n' %(self.rptdirpath, self.rptdirpath))
+                                logger.debug(os.path.join(dirname, 'tmp', rptname)+' done')
+            logger.info('all {path} file done in {}/tmp\n'.format(path=self.rptdirpath))
         else:
-            print('not found dir\n')
+            logger.info('not found dir\n')
 
     def unzip_file(self, local, exdir):
 
         try:
-            zip_file=zipfile.ZipFile(local)
-            zip_file.testzip()
-            zip_file.close()
             with zipfile.ZipFile(local, 'r') as zf:
                 for rptname in zf.namelist():
                     zf.extract(rptname, exdir)
-            print('Unzip file done: %s' %local)
-        except zipfile.BadZipfile:
-            os.remove(path)
-            print('\nBadZipfile: %s not exist' %local)
-            sys.exit()
+            logger.info("unzip file '{}' to '{}' done".format(local, exdir))
+        except :
+            assert False, 'except for unzip file to {}'.format(local)
 
-    def upload_gdrive(self, daily_info, rc):
+    def upload_gdrive(self, daily_info):
 
         file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
 
         if os.path.exists(file_abspath):
-            _gdrive.UploadFile(file_abspath, daily_info.gdrive_dir_id, recover=rc)
+            _gdrive.UploadFile(file_abspath, daily_info.item, recover=args.recover)
         else:
-            print('Warning: file path is not exist')
+            logger.warning('Warning: file path is not exist')
 
     def parser_rpt_to_DB(self, daily_info, fut='TX'):
+        zip_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
         rpt_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, 'tmp', daily_info.filename)).replace('.zip', '.rpt')
         ## split rpt_file_abspath to list ex. ['Daily', '2018', '05', '08', 'zip']
         fname_list=re.split('_|\.', daily_info.filename)
 
         ## check rpt file is exist on tmp, zip is exist?, gdrive is exist? or return None
-        if not os.path.isfile(rpt_file_abspath):
-            zip_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
+        if not os.path.isfile(rpt_file_abspath) or args.recover:
             if not os.path.isfile(zip_file_abspath):
-                oid=_gdrive.getIdByName(daily_info.filename, daily_info.gdrive_dir_id)
+                oid=_gdrive.getObjByName(daily_info.filename, daily_info.gdrive_dir_id)['id']
                 if oid==None:
-                    return None
-                _gdrive.GetContentFile(zip_file_abspath, oid)
+                    logger.warning('warning to get oid: _gdrive.getObjByName({}, {})'.format(daily_info.filename, daily_info.gdrive_dir_id))
+                _gdrive.GetContentFile(daily_info.item, zip_file_abspath)
             self.unzip_file(zip_file_abspath, os.path.join(daily_info.rptdirpath, 'tmp'))
 
         ## Confirmation item(TX, mouth), grep next month if not found this month
@@ -276,59 +265,90 @@ class mining_rpt():
             if datetime.strptime(date, "%Y/%m/%d")>datetime.strptime(date_list[1], "%Y%m%d"):
                 print(export_str)
                 break
-        sys.exit()
 
-## library of gdrive
-#oid=gdrive().getIdByName('Daily_2018_08_15.zip', gdrive().fut_rpt_id)
-#gdrive().GetContentFile('/home/luke/fex_daily/trash/aa.zip', oid)
-#gdrive().UploadFile('/home/luke/fex_daily/trash/aa.zip', gdrive().fut_rpt_id)
+def get_logging_moduel():
+    global logger
+    logger=logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    console=logging.StreamHandler(sys.stdout)
+    console.setLevel(logging.INFO)
+    formatter=logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+
+def valid_date(date_text):
+    global logger
+    date_interval=date_text.split('-')
+    today=datetime.today()
+
+    try:
+        start_date=datetime.strptime(date_interval[0], '%Y%m%d')
+        ## set end_date if not setting
+        end_date=today.replace(minute=0, hour=0, second=0, microsecond=0)
+        if len(date_interval)==2:
+            end_date=datetime.strptime(date_interval[1], '%Y%m%d')
+
+    except ValueError:
+        logger.error('valid date format fail: "--date {!s}"'.format(date_text))
+        assert False, 'valid date format fail: "--date {!s}"'.format(date_text)
+
+    ## valid end_date after start_date
+    if start_date > end_date or start_date > today:
+        logger.error('start date({}) after end_date({} or today({}))'.format(start_date, end_date, today))
+        assert False, 'start date({}) after end_date({} or today({}))'.format(start_date, end_date, today)
+
+    logger.info('(start_date, end_date) = ({}, {})'.format(start_date, end_date))
+    return (start_date, end_date)
 
 if __name__ == '__main__':
-    #before_date=int(sys.argv[1]) if len(sys.argv)>1 else 1
+    '''init config'''
+    today=datetime.today()
+    items=('fut_rpt', 'opt_rpt')
+    _gdrive=gdrive()
+
+    '''set logging moduel for debug'''
+    get_logging_moduel()
+
+    '''set args for mining_rpt control'''
     parser=argparse.ArgumentParser()
-    parser.add_argument("-d", "--date", type=str, default=datetime.today().strftime('%Y%m%d'), \
-                        help="download rpt $DATE~today, tpye=str ex:20180101")
-    parser.add_argument("-r", "--recover", type=bool, default=False, help="flag with $RECOVER, tpye=bool.")
-    parser.add_argument("-e", "--export", nargs='+', type=str, default=None, help="Date1 Date2 Future(TX) Interval(300), tpye=str ex:-e 20180101 20180102 TX 300")
+    parser.add_argument('-d', '--date', type=str, default=today.strftime('%Y%m%d'), help='download rpt from $DATE~today, tpye=str ex: 20180101-20180102')
+    parser.add_argument("-e", "--export", nargs='+', type=str, default=None, help="Date1 Date2 Future(TX) Interval(300), tpye=str ex: -e 20180101 20180102 TX 300")
+    parser.add_argument('--upload-recover', dest='recover', default=False, action='store_true', help='switch for new rpt instead of gdrive exist.')
     args=parser.parse_args()
 
+    (start_D, end_D)=valid_date(args.date)
     logger.info('{!s}'.format(args))
-    #_gdrive=None if args.export!=None else gdrive()
-    #mining_rpt()
-    #sys.exit()
-    items=('fut_rpt', 'opt_rpt')
 
-    today=datetime.today()
-    date=datetime.strptime(args.date, "%Y%m%d")
-    date=date if args.date!=None and date<today else today+timedelta(days=-1)
-    diff_days=(date-today).days+1
-
-    _gdrive=None if args.export!=None else gdrive()
     if args.export==None:
         pass
     elif args.export!=None and len(args.export)>1 and len(args.export)<5:
-        mining_rpt().export_sql_to_txt(args.export)
+        mining_rpt(today.strftime('%Y_%m_%d')).export_sql_to_txt(args.export)
+        sys.exit()
     else:
-        print('error arg: '+repr(args.export)+', ex:-e 20180101 20180102 TX 300')
+        logger.error('error arg: '+repr(args.export)+', ex:-e 20180101 20180102 TX 300')
         sys.exit()
 
-    # every daily
-    for i in range(diff_days, 1, 1):
-        date=(today+timedelta(days=i)).strftime('%Y_%m_%d')
+    ## every daily
+    i=start_D
+    while i <= end_D:
+        date=i.strftime('%Y_%m_%d')
+        logger.info('Start mining for {}'.format(date))
 
-        for j in items[:2]:
-            print('#Mining: %s, %s' %(j, date))
-            daily_mining=mining_rpt(j, date=date)
+        for j in items:
+            daily_mining=mining_rpt(date, j)
 
             daily_mining.download_rpt()
-            daily_mining.upload_gdrive(daily_mining, rc=args.recover)
+            daily_mining.upload_gdrive(daily_mining)
             if j=='fut_rpt':
                 daily_mining.parser_rpt_to_DB(daily_mining, 'TX')
                 daily_mining.parser_rpt_to_DB(daily_mining, 'MTX')
-                #sys.exit()
+        i+=timedelta(days=1)
 
+    '''
     # unzip_all2rptdir for once
     for i in items[:0]:
         daily_mining=mining_rpt(i)
         daily_mining.unzip_all2rptdir()
         pass
+    '''

@@ -12,26 +12,23 @@ Github: https://github.com/googledrive/PyDrive
 Quickstart: https://pythonhosted.org/PyDrive/quickstart.html
 '''
 
-#logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s %(name)s - %(levelname)-s: %(message)s')
-#logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
-#logging.getLogger('googleapiclient.discovery').setLevel(logging.ERROR)
-logger=logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+def get_logging_moduel():
+    global logger
+    logger=logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
 
-console=logging.StreamHandler(sys.stdout)
-console.setLevel(logging.INFO)
-formatter=logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
-console.setFormatter(formatter)
-logger.addHandler(console)
+    console=logging.StreamHandler(sys.stdout)
+    console.setLevel(logging.INFO)
+    formatter=logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
 class gdrive():
+    '''init logging'''
+    get_logging_moduel()
 
     path=os.path.dirname(__file__)
-    rpt_id='1kPoq8OgxJ-FDPweFleGpPt_D6jA8Ndm-'
-    fut_rpt_id='12UAi5f_XU6oaYbhIzU4iRohsd2V5i3V2'
-    opt_rpt_id='1GYaukGZrR3Kj3ubexwXDTwkJWkeyMEPE'
-    fut_dir_list=None
-    opt_dir_list=None
+    item_obj={'rpt': None, 'fut_rpt': None, 'opt_rpt': None}
     drive=None
 
     def __init__(self):
@@ -52,87 +49,76 @@ class gdrive():
         gauth.SaveCredentialsFile(creds_file_path)
         self.drive=GoogleDrive(gauth)
 
-        if self.fut_dir_list==None or self.opt_dir_list==None:
-            try:
-                logger.info('Loading file list from gdrive...')
-                #print('Loading file list from gdrive...')
-                query="'%s' in parents and trashed=false" %self.fut_rpt_id
-                self.fut_dir_list=self.drive.ListFile({'q': query}).GetList()
-                query="'%s' in parents and trashed=false" %self.opt_rpt_id
-                self.opt_dir_list=self.drive.ListFile({'q': query}).GetList()
-            except:
-                logger.error('Except: file list error')
-                #print('Except: file list error')
+        for key in self.item_obj.keys():
+            self.item_obj[key]=self.getObjByName(key)
+            logger.info("id of '{}' dir: {}".format(self.item_obj[key]['title'], self.item_obj[key]['id']))
 
-    def getIdByName(self, name, target_id):
-        # Paginate file lists by specifying number of max results
-        if target_id==self.fut_rpt_id:
-            file_list=self.fut_dir_list
-        elif target_id==self.opt_rpt_id:
-            file_list=self.opt_dir_list
-        for file_obj in file_list:
-            #print(file_obj['title'])
-            if file_obj['title']==name:
-                print('getIdByName(): title=%s, id=%s' % (file_obj['title'], file_obj['id']))
-                return file_obj['id']
+    def getObjByName(self, name):
+        ## get obj id by file name
+        query="title='{}' and trashed=false".format(name)
+        query_list=self.drive.ListFile({'q': query}).GetList()
+        if len(query_list)==1:
+            logger.debug("getObjByName: id({}) of '{}' item".format(query_list[0]['id'], name))
+            return query_list[0]
+        elif len(query_list)==0:
+            logger.warning("'{}' item not found item in gdrive".format(name))
+        else:
+            logger.warning("'{}' item not only in gdrive".format(name))
         return None
 
-    def GetContentFile(self, file_path, target_id, _mimetype='application/zip'):
-        if target_id==None:
-            return target_id
-        # GetContentFile(): download file(filepath) from gdrive(target_id)
-        file_obj=self.drive.CreateFile({'id': target_id})
-        print('Downloading file: %s from gdrive' % file_obj['title'])
-        # Save Drive file as a local file
-        file_obj.GetContentFile(file_path, mimetype=_mimetype)
-        print('Download done: path=%s' %file_path)
+    def GetContentFile(self, name, path, _mimetype='application/zip'):
+        obj=self.getObjByName(name)
+        if obj!=None:
+            ## GetContentFile(): download file(filepath) from gdrive(target_id)
+            file_obj=self.drive.CreateFile({'id': obj['id']})
+            logger.debug('Downloading file: {} from gdrive'.format(file_obj['title']))
+            ## Save Drive file as a local file
+            file_obj.GetContentFile(path, mimetype=_mimetype)
+            logger.info('Download done: path={}'.format(path))
+        else:
+            logger.error("'{}' item not found in gdrive".format(name))
 
-    def UploadFile(self, file_path, target_id, _mimetype='application/zip', recover=True):
-        # Upload(): upload file(file_path) to grive(target_id)
-        file_name=os.path.split(file_path)[1]
-        try:
-            if target_id==self.fut_rpt_id:
-                file_list=self.fut_dir_list
-            elif target_id==self.opt_rpt_id:
-                file_list=self.opt_dir_list
+    def UploadFile(self, path, name, _mimetype='application/zip', recover=True):
+        ## Upload(): upload file(file_path) to grive(name)
+        ext_obj=self.item_obj.get(name, self.getObjByName(name))
 
+        if ext_obj!=None:
             # delete file if file exist in gdrive
-            for obj in file_list:
-                if obj['title']==file_name and recover==True:
-                    print('File exist on gdrive: title=%s, id=%s' %(obj['title'], obj['id']))
-                    obj.Delete()
-                    print('Delete file in gdrive')
+            fname=os.path.basename(path)
+            obj=self.getObjByName(fname)
+            if obj!=None and recover:
+                logger.debug('file({}) exist in gdrive: id={}'.format(obj['title'], obj['id']))
+                obj.Delete()
+                logger.info('Delete file({}) in gdrive'.format(obj['title']))
 
             # Create GoogleDriveFile instance
-            file_obj=self.drive.CreateFile({"title": file_name, "parents": [{"id": target_id}]})
-            file_obj.SetContentFile(file_path)
+            file_obj=self.drive.CreateFile({"title": fname, "parents": [{"id": ext_obj['id']}]})
+            file_obj.SetContentFile(path)
             file_obj.Upload()
-            print('Upload file: %s with mimeType %s' % (file_obj['title'], file_obj['mimeType']))
-        except :
-            print("Unexpected error:", sys.exc_info()[0])
+            logger.info("upload local file({}) with mimeType {} to '{}' item of gdrive".format(file_obj['title'], file_obj['mimeType'], ext_obj['title']))
+        else:
+            logger.error("Unexpected error:", sys.exc_info()[0])
 
 if __name__ == '__main__':
 
-    gdrive()
-    sys.exit()
     '''funtion library
     #gdrive().getIdByName(name, target_id):
     #gdrive().GetContentFile(file_path, target_id, _mimetype='application/zip'):
     #gdrive().UploadFile(file_path, target_id, _mimetype='application/zip'):
     '''
-    #print(type(gdrive().fut_dir_list[0]))
-    #oid=gdrive().getIdByName('Daily_2018_10_04.zip', gdrive().fut_rpt_id)
-    #gdrive().GetContentFile('/home/luke/fex_daily/trash/aa.zip', oid)
-    #gdrive().UploadFile('/home/luke/fex_daily/trash/aa.zip', gdrive().fut_rpt_id)
-    #gdrive().fut_rpt_id
-
-
     # Auto-iterate through all files in the root folder.
-    file_list = drive.ListFile({'q': "'root' in parents and trashed=false", 'maxResults': 10}).GetList()
-    for file1 in file_list:
-        #if file1['title']=='fut_rpt':
-        print('title: %s, id: %s' % (file1['title'], file1['id']))
+    gdrive=gdrive()
+    gdrive.getObjByName('Daily_2019_11_06.zip')
     sys.exit()
+    drive=gdrive.drive
+    #query="'{!s}' in parents and trashed=false".format(self.fut_rpt_id)
+    query="'{!s}' in parents and title='Daily_2019_11_06.zip' and trashed=false".format(gdrive.fut_rpt_id)
+    #query="title='MaxDrawDown_TXF1.xlsm' and trashed=false"
+    query2="'root' in parents and trashed=false"#, 'maxResults': 10
+    file_list = drive.ListFile({'q': query, 'maxResults': 10}).GetList()
+    for f_obj in file_list:
+        #if file1['title']=='fut_rpt':
+        print('title: %s, id: %s' % (f_obj['title'], f_obj['id']))
     # Create GoogleDriveFile instance
     # file2 = drive.CreateFile( {'title':'Daily_2018_08_10.zip', 'mimeType':'application/zip',
-    #        "parents": [{"id": tgt_folder_id}]})
+    #    V    "parents": [{"id": tgt_folder_id}]})
