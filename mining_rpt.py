@@ -11,45 +11,39 @@ import sys, os
 import zipfile, wget, argparse, re
 import sqlite3
 import logging
+import numpy as np
 from datetime import datetime, timedelta
 from devices.gdrive import gdrive
 
 class mining_rpt():
     path=os.path.dirname(__file__)
     date=None
-    fex_info=None
-    filename=None
-    url=None
-    gdrive_dir_id=None
-    rptdirpath=None
     item=None
+    fex_info=None
 
-    def __init__(self, date, item='fut_rpt'):
-        global logger
-        self.date=today.strftime('%Y_%m_%d') if date==None else date
-        logger.info('Mining: {}, {}'.format(self.date, item))
+    def __init__(self, *args, **kwargs):
+        global logger, gdevice
+        self.date=kwargs.get('date', today.strftime('%Y_%m_%d'))
+        self.item=kwargs.get('item', 'fut_rpt')
+        logger.info('Mining: {}, {}'.format(self.date, self.item))
 
         '''get gdrive() device'''
-        self.fex_info={
+        gdevice=gdrive()
+        fex_dict={
             'fut_rpt':{
-                'filename':"Daily_{}.zip".format(self.date),
-                'url':'https://www.taifex.com.tw/DailyDownload/DailyDownload',
-                'gdrive_id': _gdrive.__class__.__dict__['item_obj'].get('fut_rpt', None)['id']
+                'symbol': ['TX', 'MTX'],
+                'filename': "Daily_{}.zip".format(self.date),
+                'url': 'https://www.taifex.com.tw/DailyDownload/DailyDownload'
             },
             'opt_rpt':{
-                'filename':"OptionsDaily_{}.zip".format(self.date),
-                'url':"http://www.taifex.com.tw/DailyDownload/OptionsDailyDownload",
-                'gdrive_id': _gdrive.__class__.__dict__['item_obj'].get('opt_rpt', None)['id']
+                'filename': "OptionsDaily_{}.zip".format(self.date),
+                'url': "http://www.taifex.com.tw/DailyDownload/OptionsDailyDownload"
             }
         }
         try:
-            self.filename=self.fex_info[item]['filename']
-            self.url=self.fex_info[item]['url']
-            self.gdrive_dir_id=self.fex_info[item]['gdrive_id']
-            self.rptdirpath=os.path.join(self.path, item)
-            self.item=item
-            logger.info('self.gdrive_dir_id: {}'.format(self.gdrive_dir_id))
-            logger.info('ready to download {} to {} via url: {}'.format(self.filename, self.rptdirpath, self.url))
+            self.fex_info=fex_dict[self.item]
+            self.fex_info['rptdirpath']=os.path.join(self.path, self.item)
+            logger.info('ready to download {} to {} via url: {}'.format(self.fex_info['filename'], self.fex_info['rptdirpath'], self.fex_info['url']))
         except:
             logger.error('fex_info not found item')
 
@@ -65,14 +59,14 @@ class mining_rpt():
                 os.remove(path)
                 logger.warning('BadZipfile: remove {}'.format(path))
 
-        if not os.path.exists(self.rptdirpath):
-            os.mkdir(self.rptdirpath)
+        if not os.path.exists(self.fex_info['rptdirpath']):
+            os.mkdir(self.fex_info['rptdirpath'])
 
-        storepath=os.path.join(self.rptdirpath, self.filename)
+        storepath=os.path.join(self.fex_info['rptdirpath'], self.fex_info['filename'])
         if args.recover==False and os.path.exists(storepath):
             logger.info('%s is exist' %storepath)
         else:
-            file_url=os.path.join(self.url, self.filename)
+            file_url=os.path.join(self.fex_info['url'], self.fex_info['filename'])
             logger.info('wget {} via {}'.format(storepath, file_url))
             os.system('wget -O {} {}'.format(storepath, file_url))
             ## check zip is not empty
@@ -81,17 +75,16 @@ class mining_rpt():
     def unzip_all2rptdir(self):
         logger.info('Exteacting for all unzip...')
 
-        tmp_path=os.path.join(self.rptdirpath, 'tmp')
+        tmp_path=os.path.join(self.fex_info['rptdirpath'], 'tmp')
         if not os.path.exists(tmp_path):
             os.mkdir(tmp_path)
 
-        if os.path.isdir(self.rptdirpath):
-            logger.info('Exist on local: {}'.format(self.rptdirpath))
-            for dirname, dirnames, filenames in os.walk(self.rptdirpath):
-                if dirname == self.rptdirpath:
+        if os.path.isdir(self.fex_info['rptdirpath']):
+            logger.info('Exist on local: {}'.format(self.fex_info['rptdirpath']))
+            for dirname, dirnames, filenames in os.walk(self.fex_info['rptdirpath']):
+                if dirname == self.fex_info['rptdirpath']:
                     for filename in filenames:
                         file_abspath=os.path.abspath(os.path.join(dirname, filename))
-                        logger.debug(file_abspath, self.gdrive_dir_id)
                         try:
                             zip_file=zipfile.ZipFile(file_abspath)
                             zip_file.testzip()
@@ -103,7 +96,7 @@ class mining_rpt():
                             for rptname in zf.namelist():
                                 zf.extract(rptname, os.path.join(dirname, 'tmp'))
                                 logger.debug(os.path.join(dirname, 'tmp', rptname)+' done')
-            logger.info('all {path} file done in {}/tmp\n'.format(path=self.rptdirpath))
+            logger.info('all {path} file done in {}/tmp\n'.format(path=self.fex_info['rptdirpath']))
         else:
             logger.info('not found dir\n')
 
@@ -117,29 +110,26 @@ class mining_rpt():
         except :
             assert False, 'except for unzip file to {}'.format(local)
 
-    def upload_gdrive(self, daily_info):
+    def upload_gdrive(self):
 
-        file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
+        file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], self.fex_info['filename']))
 
         if os.path.exists(file_abspath):
-            _gdrive.UploadFile(file_abspath, daily_info.item, recover=args.recover)
+            gdevice.UploadFile(file_abspath, self.item, recover=args.recover)
         else:
             logger.warning('Warning: file path is not exist')
 
-    def parser_rpt_to_DB(self, daily_info, fut='TX'):
-        zip_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, daily_info.filename))
-        rpt_file_abspath=os.path.abspath(os.path.join(daily_info.rptdirpath, 'tmp', daily_info.filename)).replace('.zip', '.rpt')
+    def parser_rpt_to_DB(self, fut='TX'):
+        zip_file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], self.fex_info['filename']))
+        rpt_file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], 'tmp', self.fex_info['filename'])).replace('.zip', '.rpt')
         ## split rpt_file_abspath to list ex. ['Daily', '2018', '05', '08', 'zip']
-        fname_list=re.split('_|\.', daily_info.filename)
+        fname_list=re.split('_|\.', self.fex_info['filename'])
 
         ## check rpt file is exist on tmp, zip is exist?, gdrive is exist? or return None
         if not os.path.isfile(rpt_file_abspath) or args.recover:
             if not os.path.isfile(zip_file_abspath):
-                oid=_gdrive.getObjByName(daily_info.filename, daily_info.gdrive_dir_id)['id']
-                if oid==None:
-                    logger.warning('warning to get oid: _gdrive.getObjByName({}, {})'.format(daily_info.filename, daily_info.gdrive_dir_id))
-                _gdrive.GetContentFile(daily_info.item, zip_file_abspath)
-            self.unzip_file(zip_file_abspath, os.path.join(daily_info.rptdirpath, 'tmp'))
+                gdevice.GetContentFile(self.item, zip_file_abspath)
+            self.unzip_file(zip_file_abspath, os.path.join(self.fex_info['rptdirpath'], 'tmp'))
 
         ## Confirmation item(TX, mouth), grep next month if not found this month
         if fname_list[0]=='Daily':
@@ -204,7 +194,7 @@ class mining_rpt():
         sys.stdout.write('\n')
 
         ## query to DB
-        conn=sqlite3.connect(os.path.abspath(daily_info.path)+'/FCT_DB.db')
+        conn=sqlite3.connect(os.path.abspath(self.path)+'/FCT_DB.db')
         cursor=conn.cursor()
         #print(repr(req[0])+'\n'+repr(req[839])+'\n'+repr(req[-1]))
         SQL="INSERT INTO tw%s VALUES (?,?,?,?,?,?,?);" %fut
@@ -226,45 +216,54 @@ class mining_rpt():
         conn.close()
         print(tmp, len(req))
 
-    def export_sql_to_txt(self, date_list):
+    def export_sql_to_txt(self):
+        '''vaild args input'''
+        logger.debug("-e args input '{}'".format(args.export))
+        if len(args.export)!=2:
+            assert False, "error -e args input '{}'".format(args.export)
+        fut='TX' if args.export[0] not in self.fex_info['symbol'] else args.export[0]
+        interval=300 if args.export[1] not in ['1', '5', '15', '30', '60', '300'] else int(args.export[1])
+        logger.info("(fut, interval, date) = ('{}', {}, {})".format(fut, interval, start_D))
 
-        date=datetime.strptime(date_list[0], "%Y%m%d").strftime('%Y/%m/%d')
-        #print(date_list.__len__())
-        fut=date_list[2] if len(date_list)>2 else 'TX'
-        size=int(date_list[3]) if len(date_list)>3 else 300
+        '''read DB via sqlite3'''
         conn=sqlite3.connect(os.path.abspath(os.path.dirname(__file__))+'/FCT_DB.db')
         cursor=conn.cursor()
-        #SQL1="SELECT Date, MAX(High), MIN(Low), SUM(Volume) FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %("TX", date)
 
-        export_str='Date,Time,Open,High,Low,Close,Volume\n'
-        while True:
-            SQL="SELECT * FROM tw%s WHERE Date=\'%s\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;" %(fut, date)
+        def loop_for_oneday(date):
+            content=''
+            SQL="SELECT * FROM tw{!s} WHERE Date=\'{!s}\' and Time>\'08:45:00\' and Time<=\'13:45:00\' ORDER BY Date, Time;".format(fut, date)
             cursor.execute(SQL)
-            if size==1:
+            if interval==1:
                 req=cursor.fetchall()
-                if req:
-                    for i in req:
-                        export_str+=(str(map(str, i)).strip("\[").strip("\]").replace("\'", "").replace(" ", ""))+'\n'
+                for i in req:
+                    content+='{},{},{},{},{},{},{}\n'.format(*i)
+                logger.debug(export_str)
             else:
                 while True:
-                    req=cursor.fetchmany(size)
+                    req=cursor.fetchmany(interval)
                     if not req:
                         break
                     else:
-                        #print(req)
-                        (High, Low, Vol)=(req[0][3], req[0][3], 0)
-                        for i in req:
-                            High=i[3] if i[3]>High else High
-                            Low=i[4] if i[4]<Low else Low
-                            Vol+=i[6]
-                        Close_time=req[-1][1]
-                        if req[-1][1]=='13:30:00': Close_time='13:45:00'
-                        export_str+='%s,%s,%s,%s,%s,%s,%s\n' %(req[-1][0], Close_time, req[0][2], High, Low, req[-1][5], Vol)
+                        req_array=np.array(req)
+                        logger.debug(req_array)
+                        Date=req_array[:,0][-1]
+                        Time=req_array[:,1][-1]
+                        Open=req_array[:,2][0]
+                        High=max(list(map(int, req_array[:,3])))
+                        Low=min(list(map(int, req_array[:,4])))
+                        Close=req_array[:,5][-1]
 
-            date=(datetime.strptime(date, "%Y/%m/%d")+timedelta(days=1)).strftime('%Y/%m/%d')
-            if datetime.strptime(date, "%Y/%m/%d")>datetime.strptime(date_list[1], "%Y%m%d"):
-                print(export_str)
-                break
+                        Vol=sum(list(map(int, req_array[:,6])))
+                        out=(Date, Time, Open, High, Low, Close, Vol)
+                        content+='{},{},{},{},{},{},{}\n'.format(*out)
+            return content
+
+        d=start_D
+        export_str='Date,Time,Open,High,Low,Close,Volume\n'
+        while not d > end_D:
+            export_str+=loop_for_oneday(d.strftime('%Y/%m/%d'))
+            d=d+timedelta(days=1)
+        os.system('echo "{}" > {}_{}'.format(export_str, fut, start_D.strftime('%Y%m%d')))
 
 def get_logging_moduel():
     global logger
@@ -278,14 +277,12 @@ def get_logging_moduel():
     logger.addHandler(console)
 
 def valid_date(date_text):
-    global logger
     date_interval=date_text.split('-')
-    today=datetime.today()
 
     try:
         start_date=datetime.strptime(date_interval[0], '%Y%m%d')
         ## set end_date if not setting
-        end_date=today.replace(minute=0, hour=0, second=0, microsecond=0)
+        end_date=today
         if len(date_interval)==2:
             end_date=datetime.strptime(date_interval[1], '%Y%m%d')
 
@@ -303,9 +300,8 @@ def valid_date(date_text):
 
 if __name__ == '__main__':
     '''init config'''
-    today=datetime.today()
+    today=datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
     items=('fut_rpt', 'opt_rpt')
-    _gdrive=gdrive()
 
     '''set logging moduel for debug'''
     get_logging_moduel()
@@ -313,20 +309,15 @@ if __name__ == '__main__':
     '''set args for mining_rpt control'''
     parser=argparse.ArgumentParser()
     parser.add_argument('-d', '--date', type=str, default=today.strftime('%Y%m%d'), help='download rpt from $DATE~today, tpye=str ex: 20180101-20180102')
-    parser.add_argument("-e", "--export", nargs='+', type=str, default=None, help="Date1 Date2 Future(TX) Interval(300), tpye=str ex: -e 20180101 20180102 TX 300")
+    parser.add_argument("-e", "--export", nargs='+', type=str, default=None, help="Future symbol(TX) Interval(300), tpye=str ex: -e TX 300, use -d Date1-Date2")
     parser.add_argument('--upload-recover', dest='recover', default=False, action='store_true', help='switch for new rpt instead of gdrive exist.')
     args=parser.parse_args()
 
     (start_D, end_D)=valid_date(args.date)
     logger.info('{!s}'.format(args))
 
-    if args.export==None:
-        pass
-    elif args.export!=None and len(args.export)>1 and len(args.export)<5:
-        mining_rpt(today.strftime('%Y_%m_%d')).export_sql_to_txt(args.export)
-        sys.exit()
-    else:
-        logger.error('error arg: '+repr(args.export)+', ex:-e 20180101 20180102 TX 300')
+    if args.export!=None:
+        mining_rpt().export_sql_to_txt()
         sys.exit()
 
     ## every daily
@@ -336,13 +327,13 @@ if __name__ == '__main__':
         logger.info('Start mining for {}'.format(date))
 
         for j in items:
-            daily_mining=mining_rpt(date, j)
+            daily_mining=mining_rpt(date=date, item=j)
 
             daily_mining.download_rpt()
-            daily_mining.upload_gdrive(daily_mining)
+            daily_mining.upload_gdrive()
             if j=='fut_rpt':
-                daily_mining.parser_rpt_to_DB(daily_mining, 'TX')
-                daily_mining.parser_rpt_to_DB(daily_mining, 'MTX')
+                daily_mining.parser_rpt_to_DB('TX')
+                daily_mining.parser_rpt_to_DB('MTX')
         i+=timedelta(days=1)
 
     '''
