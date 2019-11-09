@@ -122,99 +122,104 @@ class mining_rpt():
     def parser_rpt_to_DB(self, fut='TX'):
         zip_file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], self.fex_info['filename']))
         rpt_file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], 'tmp', self.fex_info['filename'])).replace('.zip', '.rpt')
-        ## split rpt_file_abspath to list ex. ['Daily', '2018', '05', '08', 'zip']
-        fname_list=re.split('_|\.', self.fex_info['filename'])
-
         ## check rpt file is exist on tmp, zip is exist?, gdrive is exist? or return None
         if not os.path.isfile(rpt_file_abspath) or args.recover:
             if not os.path.isfile(zip_file_abspath):
+                logger.info('not found {} and get zip from gdrive'.format(zip_file_abspath))
                 gdevice.GetContentFile(self.item, zip_file_abspath)
             self.unzip_file(zip_file_abspath, os.path.join(self.fex_info['rptdirpath'], 'tmp'))
 
-        ## Confirmation item(TX, mouth), grep next month if not found this month
-        if fname_list[0]=='Daily':
-            futc=''.join(fname_list[1:3])
-            get_fut=os.popen("cat %s | grep ,%s | grep -P '%s\s+'" %(rpt_file_abspath, fut, futc)).read().strip()
-            if get_fut=='':
-                futc=(datetime.strptime(futc, '%Y%m')+timedelta(days=31)).strftime('%Y%m')
-                get_fut=os.popen("cat %s | grep ,%s | grep -P '%s\s+'" %(rpt_file_abspath, fut, futc)).read().strip()
-        textlist=get_fut.split('\n')
+        ## Confirmation get_fut(flie, fut, fut_mouth), grep next month if close on this month
+        date=datetime.strptime(self.date, '%Y_%m_%d')
+        if 'Daily' in self.fex_info['filename']:
+            grep_info=(rpt_file_abspath, fut, date.strftime('%Y%m'))
+            tick_result=os.popen("cat {} | grep ,{} | grep -P '{}\s+'".format(*grep_info)).read().strip()
+            if tick_result=='':
+                grep_info=(date+timedelta(days=31)).strftime('%Y%m')
+                tick_result=os.popen("cat  | grep ,{} | grep -P '{}\s+'".format(rpt_file_abspath, fut, futc)).read().strip()
+        row=len(tick_result.split('\r\n'))
+        raw_data=tick_result.replace(',', ' ').replace('*', ' ').split()
+        logger.debug('reshape check, tick row_data: ({}, {}), '.format(row, raw_data))
+        assert len(raw_data)/8==row, 'check np.array.reshape(2-dim, -1) ok'
+        tick_array=np.array(raw_data).reshape(row, -1)
 
-        ## Mining 150000-050000, 084500-134500
-        req=[]
-        tmp=len(textlist)
-        for i in range(tmp):
-            (_date, _fut, _futc, _time, _price, _volume)=map(str.strip, textlist[i].split(',')[:-3])
-            _price=int(_price)
-            _volume=int(_volume)
-            _ptrtime=datetime.strptime(_date+_time, '%Y%m%d%H%M%S')
+        ## found first tick time: 150000-050000, 084500-134500
+        logger.debug('first tick:  {}'.format(tick_array[0]))
+        if datetime.strptime(tick_array[0,3], '%H%M%S').hour == 15:
+            stime=datetime.strptime(tick_array[0,0]+'150000', '%Y%m%d%H%M%S')+timedelta(minutes=1)
+        else:
+            stime=datetime.strptime(tick_array[0,0]+'084500', '%Y%m%d%H%M%S')+timedelta(minutes=1)
 
-            ## 150000-235900, (跨日判斷)000000-050000(多筆), 084500-134500(多筆)
-            if i==0:
-                (Open, High, Low, Close, Volume)=(_price, _price, _price, _price, 0)
-                open_time=datetime.strptime(_date+_time[:-2], '%Y%m%d%H%M')
-                step_time=open_time+timedelta(minutes=1)
-                (date, fut, futc, endtime)=map(str.strip, textlist[-1].split(',')[:4])
-                close_time=datetime.strptime(date+endtime[:-2], '%Y%m%d%H%M')+timedelta(minutes=1)
-                next
-                #print(open_time, step_time, close_time)
-            if _ptrtime<step_time or _ptrtime.strftime('%H%M%S')=='050000' or (_ptrtime.strftime('%H%M%S')=='134500'):
-                High=_price if _price>High else High
-                Low=_price if _price<Low else Low
-                Close=_price
-                Volume+=_volume
-            else:
-                ele=(step_time.strftime('%Y/%m/%d'), str(step_time.time()), Open, High, Low, Close, Volume/2)
-                if i!=tmp-1:
-                    req.append(ele)
-                    #print(ele, len(req))
-                ## diff time to append
-                diff_second=(_ptrtime-step_time).seconds
-                if diff_second>59 and step_time.strftime('%H%M%S')!='050000':
-                    for i in range(1, diff_second//60+1, 1):
-                        diff_ele=list(ele)
-                        diff_ele[1]=str((step_time+timedelta(minutes=i)).time())
-                        diff_ele[6]=0
-                        req.append(tuple(diff_ele))
-                        #print(diff_ele, len(req))
-                (Open, High, Low, Close, Volume)=(_price, _price, _price, _price, _volume)
-                step_time=datetime.strptime(_date+_time[:-2], '%Y%m%d%H%M')+timedelta(minutes=1)
-                next
-            if i==tmp-1:
-                ele=(step_time.strftime('%Y/%m/%d'), str(step_time.time()), Open, High, Low, Close, Volume/2)
-                req.append(ele)
-                #print(ele, len(req))
-                break
+        i=0
+        req=list()
+        tmp=list()
+        tick_len=len(tick_array)
+        for tick in tick_array:
+            i+=1
+            '''push tick to list'''
+            t=datetime.strptime(tick[0]+tick[3], '%Y%m%d%H%M%S')
+            if  t>=stime+timedelta(minutes=-1) and t<stime or t==t.replace(hour=5, minute=0, second=0, microsecond=0) or t==t.replace(hour=13, minute=45, second=0, microsecond=0):
+                logger.debug('append {} to tmp list'.format(tick))
+                tmp.append(tuple(tick))
+                if i<tick_len:
+                    continue
+
+            '''cal one min result'''
+            if not tmp:
+                continue
+            req_array=np.array(tmp)
+            logger.debug(req_array)
+            Date=stime.strftime('%Y/%m/%d')
+            Time=stime.strftime('%H:%M:%S')
+            Open=req_array[:,4][0].astype('int')
+            High=req_array[:,4].astype('int').max(axis=0)
+            Low=req_array[:,4].astype('int').min(axis=0)
+            Close=req_array[:,4][-1].astype('int')
+            Vol=req_array[:,5].astype('int').sum(axis=0)/2
+            out=(Date, Time, Open, High, Low, Close, Vol)
+            logger.debug(out)
+            req.append(tuple(out))
+
+            '''init tmp list'''
+            if i<tick_len:
+                tmp=list()
+                tmp.append(tick)
+                stime+=timedelta(minutes=1)
+                if t==datetime.strptime(tick[0]+'084500', '%Y%m%d%H%M%S'):
+                    stime=datetime.strptime(tick[0]+'084500', '%Y%m%d%H%M%S')+timedelta(minutes=1)
+                logger.debug('next time step: {}'.format(stime))
+
             ## use progressbar
-            k=float(i+1)/tmp*100
-            step=tmp//32
+            k=float(i+1)/tick_len*100
+            step=tick_len//32
             _str='='*(i//step)+'>'+' '*(32-(i//step))
             sys.stdout.write('\r[%s][%.1f%%]' %(_str, k))
             sys.stdout.flush()
         sys.stdout.write('\n')
+        logger.info('num of sql data: {}'.format(len(req)))
 
         ## query to DB
         conn=sqlite3.connect(os.path.abspath(self.path)+'/FCT_DB.db')
         cursor=conn.cursor()
-        #print(repr(req[0])+'\n'+repr(req[839])+'\n'+repr(req[-1]))
-        SQL="INSERT INTO tw%s VALUES (?,?,?,?,?,?,?);" %fut
-        SQL_Detete="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %(fut, req[-1][0],req[-1][1])
+        fut='TX' if fut not in self.fex_info['symbol'] else fut
 
         ## delete old data
+        SQL_Detete="DELETE FROM tw{} WHERE Date=\'{}\' and Time<=\'{}\';".format(fut, *req[-1][:2])
         cursor.execute(SQL_Detete)
         if req[0][1]=='15:01:00':
-            SQL_Detete1="DELETE FROM tw%s WHERE Date=\'%s\' and Time>=\'%s\';" %(fut, req[0][0],req[0][1])
-            SQL_Detete2="DELETE FROM tw%s WHERE Date=\'%s\' and Time<=\'%s\';" %(fut, req[839][0],req[839][1])
+            SQL_Detete1="DELETE FROM tw{} WHERE Date=\'{}\' and Time>=\'{}\';".format(fut, *req[0][:2])
+            SQL_Detete2="DELETE FROM tw{} WHERE Date=\'{}\' and Time<=\'{}\';".format(fut, *req[839][:2])
             cursor.execute(SQL_Detete1)
             cursor.execute(SQL_Detete2)
         conn.commit()
 
         ## insert new data
+        SQL="INSERT INTO tw{} VALUES (?,?,?,?,?,?,?);".format(fut)
         for i in range(len(req)):
+            logger.debug(req[i])
             cursor.execute(SQL, req[i])
         conn.commit()
         conn.close()
-        print(tmp, len(req))
 
     def export_sql_to_txt(self):
         '''vaild args input'''
@@ -226,7 +231,7 @@ class mining_rpt():
         logger.info("(fut, interval, date) = ('{}', {}, {})".format(fut, interval, start_D))
 
         '''read DB via sqlite3'''
-        conn=sqlite3.connect(os.path.abspath(os.path.dirname(__file__))+'/FCT_DB.db')
+        conn=sqlite3.connect(os.path.abspath(self.path)+'/FCT_DB.db')
         cursor=conn.cursor()
 
         def loop_for_oneday(date):
@@ -248,14 +253,14 @@ class mining_rpt():
                         logger.debug(req_array)
                         Date=req_array[:,0][-1]
                         Time=req_array[:,1][-1]
-                        Open=req_array[:,2][0]
-                        High=max(list(map(int, req_array[:,3])))
-                        Low=min(list(map(int, req_array[:,4])))
-                        Close=req_array[:,5][-1]
-
-                        Vol=sum(list(map(int, req_array[:,6])))
+                        Open=req_array[:,2][0].astype('int')
+                        High=req_array[:,3].astype('int').max(axis=0)
+                        Low=req_array[:,4].astype('int').min(axis=0)
+                        Close=req_array[:,5][-1].astype('int')
+                        Vol=req_array[:,6].astype('int').sum(axis=0)
                         out=(Date, Time, Open, High, Low, Close, Vol)
                         content+='{},{},{},{},{},{},{}\n'.format(*out)
+            logger.debug(content)
             return content
 
         d=start_D
@@ -263,7 +268,9 @@ class mining_rpt():
         while not d > end_D:
             export_str+=loop_for_oneday(d.strftime('%Y/%m/%d'))
             d=d+timedelta(days=1)
-        os.system('echo "{}" > {}_{}'.format(export_str, fut, start_D.strftime('%Y%m%d')))
+        date_string=start_D.strftime('%Y%m%d')+"-"+end_D.strftime('%Y%m%d') if start_D != end_D else start_D.strftime('%Y%m%d')
+        os.system('echo "{}" > {}_{}'.format(export_str, fut, date_string))
+        logger.info('out file: {}_{}'.format(fut, date_string))
 
 def get_logging_moduel():
     global logger

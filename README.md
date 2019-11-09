@@ -26,5 +26,5 @@ PS. maybe you need to install "wget" with ``pip``
 Example
 --------------
 
-    $ ./mining_rpt.py -d 20190101
-    $ ./mining_rpt.py -e 20180101 20180102 TX 300
+    $ ./mining_rpt.py -d 20190101-20190102
+    $ ./mining_rpt.py -e TX 300 -d 20190101
