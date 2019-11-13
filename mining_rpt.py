@@ -22,7 +22,7 @@ class mining_rpt():
     fex_info=None
 
     def __init__(self, *args, **kwargs):
-        global logger, gdevice
+        global gdevice
         self.date=kwargs.get('date', today.strftime('%Y_%m_%d'))
         self.item=kwargs.get('item', 'fut_rpt')
         logger.info('Mining: {}, {}'.format(self.date, self.item))
@@ -106,7 +106,7 @@ class mining_rpt():
             with zipfile.ZipFile(local, 'r') as zf:
                 for rptname in zf.namelist():
                     zf.extract(rptname, exdir)
-            logger.info("unzip file '{}' to '{}' done".format(local, exdir))
+            logger.info("Unzip '{}' to '{}'".format(local, exdir))
         except :
             assert False, 'except for unzip file to {}'.format(local)
 
@@ -120,28 +120,35 @@ class mining_rpt():
             logger.warning('Warning: file path is not exist')
 
     def parser_rpt_to_DB(self, fut='TX'):
-        zip_file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], self.fex_info['filename']))
-        rpt_file_abspath=os.path.abspath(os.path.join(self.fex_info['rptdirpath'], 'tmp', self.fex_info['filename'])).replace('.zip', '.rpt')
+        zip_file_relpath=os.path.join(self.fex_info['rptdirpath'], self.fex_info['filename'])
+        rpt_file_relpath=os.path.join(self.fex_info['rptdirpath'], 'tmp', self.fex_info['filename']).replace('.zip', '.rpt')
+
         ## check rpt file is exist on tmp, zip is exist?, gdrive is exist? or return None
-        if not os.path.isfile(rpt_file_abspath) or args.recover:
-            if not os.path.isfile(zip_file_abspath):
-                logger.info('not found {} and get zip from gdrive'.format(zip_file_abspath))
-                gdevice.GetContentFile(self.item, zip_file_abspath)
-            self.unzip_file(zip_file_abspath, os.path.join(self.fex_info['rptdirpath'], 'tmp'))
+        if not os.path.isfile(rpt_file_relpath) or args.recover:
+            if not os.path.isfile(zip_file_relpath):
+                logger.info('not found {} and get zip from gdrive'.format(zip_file_relpath))
+                gdevice.GetContentFile(self.fex_info['filename'], zip_file_relpath)
+            self.unzip_file(zip_file_relpath, os.path.dirname(rpt_file_relpath))
 
         ## Confirmation get_fut(flie, fut, fut_mouth), grep next month if close on this month
         date=datetime.strptime(self.date, '%Y_%m_%d')
         if 'Daily' in self.fex_info['filename']:
-            grep_info=(rpt_file_abspath, fut, date.strftime('%Y%m'))
-            tick_result=os.popen("cat {} | grep ,{} | grep -P '{}\s+'".format(*grep_info)).read().strip()
+            grep_info=(rpt_file_relpath, fut, date.strftime('%Y%m'))
+            tick_result=os.popen("cat {} | grep ,{} | grep -P '{}\s+'".format(*grep_info)).read()
             if tick_result=='':
-                grep_info=(date+timedelta(days=31)).strftime('%Y%m')
-                tick_result=os.popen("cat  | grep ,{} | grep -P '{}\s+'".format(rpt_file_abspath, fut, futc)).read().strip()
-        row=len(tick_result.split('\r\n'))
-        raw_data=tick_result.replace(',', ' ').replace('*', ' ').split()
-        logger.debug('reshape check, tick row_data: ({}, {}), '.format(row, raw_data))
-        assert len(raw_data)/8==row, 'check np.array.reshape(2-dim, -1) ok'
-        tick_array=np.array(raw_data).reshape(row, -1)
+                futc=date+timedelta(days=31)
+                grep_info=(rpt_file_relpath, fut, futc.strftime('%Y%m'))
+                tick_result=os.popen("cat {} | grep ,{} | grep -P '{}\s+'".format(*grep_info)).read()
+        tick_result=tick_result.strip().replace(',', ' ').replace('*', ' ')
+
+        ## tick_result to np.array.reshape
+        raw_data=tick_result.split()
+        num_tick=len(tick_result.split('\r\n'))
+        tick_len=len(tick_result.split('\r\n')[0].split())
+        logger.info('reshape check, num of tick: {}'.format(num_tick))
+        logger.info('reshape check, tick row_data[:{}]: {}'.format(tick_len, raw_data[:tick_len]))
+        assert len(raw_data)/tick_len==num_tick, 'reshape check np.array.reshape(2-dim, -1) fail'
+        tick_array=np.array(raw_data).reshape(num_tick, -1)
 
         ## found first tick time: 150000-050000, 084500-134500
         logger.debug('first tick:  {}'.format(tick_array[0]))
