@@ -43,7 +43,7 @@ class mining_rpt():
         try:
             self.fex_info=fex_dict[self.item]
             self.fex_info['rptdirpath']=os.path.join(self.path, self.item)
-            logger.info('ready to download {} to {} via url: {}'.format(self.fex_info['filename'], self.fex_info['rptdirpath'], self.fex_info['url']))
+            logger.info('ready to download {filename} to {rptdirpath} via url: {url}'.format(**self.fex_info))
         except:
             logger.error('fex_info not found item')
 
@@ -80,7 +80,7 @@ class mining_rpt():
             os.mkdir(tmp_path)
 
         if os.path.isdir(self.fex_info['rptdirpath']):
-            logger.info('Exist on local: {}'.format(self.fex_info['rptdirpath']))
+            logger.info('Exist on local: {rptdirpath}'.format(**self.fex_info))
             for dirname, dirnames, filenames in os.walk(self.fex_info['rptdirpath']):
                 if dirname == self.fex_info['rptdirpath']:
                     for filename in filenames:
@@ -96,7 +96,7 @@ class mining_rpt():
                             for rptname in zf.namelist():
                                 zf.extract(rptname, os.path.join(dirname, 'tmp'))
                                 logger.debug(os.path.join(dirname, 'tmp', rptname)+' done')
-            logger.info('all {path} file done in {}/tmp\n'.format(path=self.fex_info['rptdirpath']))
+            logger.info('all {rptdirpath} file unzip to {rptdirpath}/tmp'.format(**self.fex_info))
         else:
             logger.info('not found dir\n')
 
@@ -143,8 +143,8 @@ class mining_rpt():
 
         ## tick_result to np.array.reshape
         raw_data=tick_result.split()
-        num_tick=len(tick_result.split('\r\n'))
-        tick_len=len(tick_result.split('\r\n')[0].split())
+        num_tick=len(tick_result.splitlines())
+        tick_len=len(tick_result.splitlines()[0].split())
         logger.info('reshape check, num of tick: {}'.format(num_tick))
         logger.info('reshape check, tick row_data[:{}]: {}'.format(tick_len, raw_data[:tick_len]))
         assert len(raw_data)/tick_len==num_tick, 'reshape check np.array.reshape(2-dim, -1) fail'
@@ -157,12 +157,10 @@ class mining_rpt():
         else:
             stime=datetime.strptime(tick_array[0,0]+'084500', '%Y%m%d%H%M%S')+timedelta(minutes=1)
 
-        i=0
         req=list()
         tmp=list()
         tick_len=len(tick_array)
-        for tick in tick_array:
-            i+=1
+        for i, tick in enumerate(tick_array, 1):
             '''push tick to list'''
             t=datetime.strptime(tick[0]+tick[3], '%Y%m%d%H%M%S')
             if  t>=stime+timedelta(minutes=-1) and t<stime or t==t.replace(hour=5, minute=0, second=0, microsecond=0) or t==t.replace(hour=13, minute=45, second=0, microsecond=0):
