@@ -24,14 +24,14 @@ def get_logging_moduel():
     logger.addHandler(console)
 
 class gdrive():
-    '''init logging'''
-    get_logging_moduel()
-
     path=os.path.dirname(__file__)
     item_obj={'rpt': None, 'fut_rpt': None, 'opt_rpt': None}
     drive=None
 
     def __init__(self):
+        '''init logging'''
+        get_logging_moduel()
+
         creds_file_path=os.path.join(self.path, "mycreds.txt")
         gauth=GoogleAuth()
         # Try to load saved client credentials

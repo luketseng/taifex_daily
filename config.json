@@ -1,0 +1,12 @@
+{
+    "fut_rpt": {
+        "url": "https://www.taifex.com.tw/DailyDownload/DailyDownload",
+        "symbol": [
+            "TX",
+            "MTX"
+        ]
+    },
+    "opt_rpt": {
+        "url": "http://www.taifex.com.tw/DailyDownload/OptionsDailyDownload"
+    }
+}
