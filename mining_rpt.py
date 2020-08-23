@@ -18,6 +18,7 @@ from devices.gdrive import gdrive
 
 class mining_rpt():
     path = os.path.dirname(__file__)
+    db_name='FCT_DB.db'
     date = None
     item = None
     fex_dict_item = None
@@ -213,7 +214,7 @@ class mining_rpt():
         logger.info('num of sql data: {}'.format(len(req)))
 
         ## query to DB
-        conn = sqlite3.connect(os.path.abspath(self.path) + '/FCT_DB.db')
+        conn = sqlite3.connect(os.path.join(os.path.abspath(self.path), self.db_name))
         cursor = conn.cursor()
         fut = 'TX' if fut not in fex_info['symbol'] else fut
 
@@ -246,7 +247,7 @@ class mining_rpt():
         interval = 300 if args.export[1] not in ['1', '5', '15', '30', '60', '300'] else int(args.export[1])
         logger.info("(fut, interval, date) = ('{}', {}, {})".format(fut, interval, start_D))
         ## read DB via sqlite3
-        conn = sqlite3.connect(os.path.abspath(self.path) + '/FCT_DB.db')
+        conn = sqlite3.connect(os.path.join(os.path.abspath(self.path), self.db_name))
         cursor = conn.cursor()
 
         def loop_for_oneday(date):
