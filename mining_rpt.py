@@ -20,29 +20,31 @@ class mining_rpt():
     path = os.path.dirname(__file__)
     date = None
     item = None
-    fex_dict = None
+    fex_dict_item = None
 
     def __init__(self, *args, **kwargs):
-        with open('{}/config.json'.format(self.path), 'r') as f:
-            self.fex_dict = json.load(f, encoding='utf-8')
-        if not self.fex_dict:
-            assert False, 'not found config.json on local'
+        config_file = '{}/config.json'.format(self.path)
+        with open(config_file, 'r') as f:
+            fex_dicts = json.load(f, encoding='utf-8')
+        ## ready for default date and fex item
         self.date = kwargs.get('date', today.strftime('%Y_%m_%d'))
         self.item = kwargs.get('item', 'fut_rpt')
-        logger.info('Mining: {}, {}'.format(self.date, self.item))
-        if self.item == 'fut_rpt':
-            self.fex_dict[self.item]['filename'] = "Daily_{}.zip".format(self.date)
-        elif self.item == 'opt_rpt':
-            self.fex_dict[self.item]['filename'] = "OptionsDaily_{}.zip".format(self.date)
+        logger.info("Mining info: date='{}', item='{}'".format(self.date, self.item))
         try:
-            fex_info = self.fex_dict[self.item]
-            fex_info['rptdirpath'] = os.path.join(self.path, self.item)
-            logger.info('ready to download {filename} to {rptdirpath} via url: {url}'.format(**fex_info))
+            self.fex_dict_item = fex_dicts[self.item]
+            if self.item == 'fut_rpt':
+                self.fex_dict_item['filename'] = "Daily_{}.zip".format(self.date)
+            elif self.item == 'opt_rpt':
+                self.fex_dict_item['filename'] = "OptionsDaily_{}.zip".format(self.date)
+            self.fex_dict_item['rptdirpath'] = os.path.join(self.path, self.item)
+            logger.info(
+                'ready to download {filename} to {rptdirpath} via url: {url}'.format(**self.fex_dict_item))
         except:
             logger.error('fex_info not found item')
-        '''get gdrive() device'''
-        global gdevice
-        gdevice = gdrive()
+        ## get gdrive() device
+        if 'gdevice' not in globals():
+            global gdevice
+            gdevice = gdrive()
 
     def download_rpt(self):
 
@@ -51,18 +53,18 @@ class mining_rpt():
                 zip_file = zipfile.ZipFile(path)
                 zip_file.testzip()
                 zip_file.close()
-                logger.info('Download completed for {}'.format(path))
+                logger.info('Download completed : {} and check done'.format(path))
             except zipfile.BadZipfile:
-                os.remove(path)
                 logger.warning('BadZipfile: remove {}'.format(path))
+                os.remove(path)
 
-        fex_info = self.fex_dict[self.item]
+        fex_info = self.fex_dict_item
         if not os.path.exists(fex_info['rptdirpath']):
             os.mkdir(fex_info['rptdirpath'])
 
         storepath = os.path.join(fex_info['rptdirpath'], fex_info['filename'])
-        if args.recover == False and os.path.exists(storepath):
-            logger.info('%s is exist' % storepath)
+        if not args.recover and os.path.exists(storepath):
+            logger.info('{} is exist, args.recover = {}'.format(storepath, args.recover))
         else:
             file_url = os.path.join(fex_info['url'], fex_info['filename'])
             logger.info('wget {} via {}'.format(storepath, file_url))
@@ -73,7 +75,7 @@ class mining_rpt():
     def unzip_all2rptdir(self):
         logger.info('Exteacting for all unzip...')
 
-        fex_info = self.fex_dict[self.item]
+        fex_info = self.fex_dict_item
         tmp_path = os.path.join(fex_info['rptdirpath'], 'tmp')
         if not os.path.exists(tmp_path):
             os.mkdir(tmp_path)
@@ -97,7 +99,7 @@ class mining_rpt():
                                 logger.debug(os.path.join(dirname, 'tmp', rptname) + ' done')
             logger.info('all {rptdirpath} file unzip to {rptdirpath}/tmp'.format(**fex_info))
         else:
-            logger.info('not found dir\n')
+            logger.warning('Warning: {} dir not exist'.format(fex_info['rptdirpath']))
 
     def unzip_file(self, local, exdir):
 
@@ -111,7 +113,7 @@ class mining_rpt():
 
     def upload_gdrive(self):
 
-        fex_info = self.fex_dict[self.item]
+        fex_info = self.fex_dict_item
         file_abspath = os.path.abspath(os.path.join(fex_info['rptdirpath'], fex_info['filename']))
 
         if os.path.exists(file_abspath):
@@ -121,7 +123,7 @@ class mining_rpt():
 
     def parser_rpt_to_DB(self, fut='TX'):
 
-        fex_info = self.fex_dict[self.item]
+        fex_info = self.fex_dict_item
         zip_file_relpath = os.path.join(fex_info['rptdirpath'], fex_info['filename'])
         rpt_file_relpath = os.path.join(fex_info['rptdirpath'], 'tmp', fex_info['filename']).replace(
             '.zip', '.rpt')
@@ -165,7 +167,7 @@ class mining_rpt():
         tmp = list()
         tick_len = len(tick_array)
         for i, tick in enumerate(tick_array, 1):
-            '''push tick to list'''
+            ## push tick to list
             t = datetime.strptime(tick[0] + tick[3], '%Y%m%d%H%M%S')
             if t >= stime + timedelta(minutes=-1) and t < stime or t == t.replace(
                     hour=5, minute=0, second=0, microsecond=0) or t == t.replace(
@@ -174,7 +176,7 @@ class mining_rpt():
                 tmp.append(tuple(tick))
                 if i < tick_len:
                     continue
-            '''cal one min result'''
+            ## cal one min result
             if not tmp:
                 tmp.append(tuple(tick))
                 stime = datetime.strptime(tick[0] + '{}00'.format(tick[3][:4]),
@@ -192,7 +194,7 @@ class mining_rpt():
             out = (Date, Time, Open, High, Low, Close, Vol)
             logger.debug(out)  # change to info
             req.append(tuple(out))
-            '''init tmp list'''
+            ## init tmp list
             if i < tick_len:
                 tmp = list()
                 tmp.append(tick)
@@ -235,15 +237,15 @@ class mining_rpt():
 
     def export_sql_to_txt(self):
 
-        fex_info = self.fex_dict[self.item]
-        '''vaild args input'''
+        fex_info = self.fex_dict_item
+        ## vaild args input
         logger.debug("-e args input '{}'".format(args.export))
         if len(args.export) != 2:
             assert False, "error -e args input '{}'".format(args.export)
         fut = 'TX' if args.export[0] not in fex_info['symbol'] else args.export[0]
         interval = 300 if args.export[1] not in ['1', '5', '15', '30', '60', '300'] else int(args.export[1])
         logger.info("(fut, interval, date) = ('{}', {}, {})".format(fut, interval, start_D))
-        '''read DB via sqlite3'''
+        ## read DB via sqlite3
         conn = sqlite3.connect(os.path.abspath(self.path) + '/FCT_DB.db')
         cursor = conn.cursor()
 
@@ -286,7 +288,7 @@ class mining_rpt():
             '%Y%m%d') if start_D != end_D else start_D.strftime('%Y%m%d')
         os.system('echo "{}" > {}_{}'.format(export_str, fut, date_string))
         logger.info('out file: {}_{}'.format(fut, date_string))
-        '''output 1 year json file'''
+        ## output 1 year json file
         logger.info('start output 1 year json file: {} and {}'.format(fut, end_D.strftime('%Y%m%d')))
         interval = 300
         data = list()
@@ -347,12 +349,12 @@ def valid_date(date_text):
     return (start_date, end_date)
 
 if __name__ == '__main__':
-    '''init config'''
+    ## init config
     today = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
     items = ('fut_rpt', 'opt_rpt')
-    '''set logging moduel for debug'''
+    ## set logging moduel for debug
     get_logging_moduel()
-    '''set args for mining_rpt control'''
+    ## set args for mining_rpt control
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '-d',
