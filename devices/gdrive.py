@@ -49,13 +49,14 @@ class gdrive():
         gauth.SaveCredentialsFile(creds_file_path)
         self.drive=GoogleDrive(gauth)
 
-        for key in self.item_obj.keys():
-            obj_req=self.getObjByName(key)
-            if obj_req!=None and len(obj_req)<2:
-                self.item_obj[key]=obj_req[0]
-                logger.info("id of '{}' dir: {}".format(self.item_obj[key]['title'], self.item_obj[key]['id']))
-            else:
-                assert Fasle, 'obj_req not found or item not only in gdrive'
+        for key, obj in self.item_obj.items():
+            if not obj:
+                obj_req=self.getObjByName(key)
+                if obj_req!=None and len(obj_req)<2:
+                    self.item_obj[key]=obj_req[0]
+                else:
+                    assert Fasle, 'obj_req not found or item not only in gdrive'
+            logger.info("id of '{}' dir: {}".format(self.item_obj[key]['title'], self.item_obj[key]['id']))
 
     def getObjByName(self, name):
         ## get obj id by file name
