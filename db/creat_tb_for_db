@@ -1,0 +1,60 @@
+CREATE TABLE II_Fut(
+   Date TEXT   NOT NULL,
+   Fut             TEXT    NOT NULL,
+   Institutional   TEXT    NOT NULL,
+   TR_B_Contract          INT,
+   TR_B_Amount            INT,
+   TR_S_Contract          INT,
+   TR_S_Amount            INT,
+   TR_Net_Contract        INT,
+   TR_Net_Amount          INT,
+   OI_B_Contract          INT,
+   OI_B_Amount            INT,
+   OI_S_Contract          INT,
+   OI_S_Amount            INT,
+   OI_Net_Contract        INT,
+   OI_Net_Amount          INT
+);
+
+CREATE TABLE II_OP(
+   Date TEXT   NOT NULL,
+   OP              TEXT    NOT NULL,
+   PC              TEXT    NOT NULL,
+   Institutional   TEXT    NOT NULL,
+   TR_B_Contract          INT,
+   TR_B_Amount            INT,
+   TR_S_Contract          INT,
+   TR_S_Amount            INT,
+   TR_Net_Contract        INT,
+   TR_Net_Amount          INT,
+   OI_B_Contract          INT,
+   OI_B_Amount            INT,
+   OI_S_Contract          INT,
+   OI_S_Amount            INT,
+   OI_Net_Contract        INT,
+   OI_Net_Amount          INT
+);
+
+CREATE TABLE II_SPOT(
+   Date TEXT   NOT NULL,
+   Institutional   TEXT    NOT NULL,
+   TR_B_Amount            INT,
+   TR_S_Amount            INT,
+   TR_Net_Amount          INT
+);
+
+外資 Foreign Investor(s) / Foreign Investment Institution
+投信 Investment Trust / Domestic Institution (用於與外資作區別時)
+自營商 Dealer
+
+臺股期貨 TX
+電子期貨 TE
+金融期貨 TF
+小型臺指期貨 MTX
+臺灣50期貨 T50
+股票期貨
+ETF期貨
+櫃買指數期貨
+非金電期貨
+東證期貨
+印度50期貨
