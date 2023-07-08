@@ -281,22 +281,31 @@ class mining_rpt():
             return content
 
         d = start_D
-        export_str = 'Date,Time,Open,High,Low,Close,Volume\n'
-        while not d > end_D:
-            export_str += loop_for_oneday(d.strftime('%Y/%m/%d'))
-            d += timedelta(days=1)
+        export_str = 'Date,Time,Open,High,Low,Close,Volume'
         date_string = start_D.strftime('%Y%m%d') + "-" + end_D.strftime(
             '%Y%m%d') if start_D != end_D else start_D.strftime('%Y%m%d')
         os.system('echo "{}" > {}_{}'.format(export_str, fut, date_string))
+        while not d > end_D:
+            #export_str += loop_for_oneday(d.strftime('%Y/%m/%d'))
+            tmp = loop_for_oneday(d.strftime('%Y/%m/%d'))
+            if bool(tmp.strip()):
+                print(d)
+                os.system('echo "{}" >> {}_{}'.format(tmp.strip(), fut, date_string))
+            d += timedelta(days=1)
+        #date_string = start_D.strftime('%Y%m%d') + "-" + end_D.strftime(
+        #    '%Y%m%d') if start_D != end_D else start_D.strftime('%Y%m%d')
+        #os.system('echo "{}" > {}_{}'.format(export_str, fut, date_string))
         logger.info('out file: {}_{}'.format(fut, date_string))
         ## output 1 year json file
-        logger.info('start output 1 year json file: {} and {}'.format(fut, end_D.strftime('%Y%m%d')))
+        logger.info('start output 1.5 year json file: {} and {}'.format(fut, end_D.strftime('%Y%m%d')))
         interval = 300
         data = list()
         if not os.path.isfile('FUT_{}.json'.format(fut)):
-            d = end_D + timedelta(weeks=-53)
+            #d = end_D + timedelta(weeks=-80)
+            d = datetime.strptime('2020/01/01', '%Y/%m/%d')
             while not d > end_D:
                 result = loop_for_oneday(d.strftime('%Y/%m/%d')).strip()
+                logger.info('{}'.format(d))
                 if result:
                     i = result.split(',')
                     t = datetime.strptime(i[0], '%Y/%m/%d') + timedelta(hours=23)
@@ -308,7 +317,7 @@ class mining_rpt():
                 data = json.load(f, encoding='utf-8')
             result = loop_for_oneday(end_D.strftime('%Y/%m/%d')).strip()
             if result:
-                data.pop(0)
+                #data.pop(0)
                 i = result.split(',')
                 t = datetime.strptime(i[0], '%Y/%m/%d') + timedelta(hours=23)
                 t_mk = int(time.mktime(t.timetuple())) * 1000
