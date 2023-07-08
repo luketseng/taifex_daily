@@ -1,6 +1,7 @@
 taifex_daily
 -------
 This is project can help for backup history of taifex.
+http://zane.myftp.org/~luke/taifex_web/
 
 How to install
 --------------
