@@ -296,7 +296,7 @@ class mining_rpt():
         #    '%Y%m%d') if start_D != end_D else start_D.strftime('%Y%m%d')
         #os.system('echo "{}" > {}_{}'.format(export_str, fut, date_string))
         logger.info('out file: {}_{}'.format(fut, date_string))
-        ## output 1 year json file
+        ''' output 1 year json file '''
         logger.info('start output 1.5 year json file: {} and {}'.format(fut, end_D.strftime('%Y%m%d')))
         interval = 300
         data = list()
@@ -316,12 +316,16 @@ class mining_rpt():
             with open('FUT_{}.json'.format(fut), 'r') as f:
                 data = json.load(f, encoding='utf-8')
             result = loop_for_oneday(end_D.strftime('%Y/%m/%d')).strip()
+            last_ts = data[-1][0]
             if result:
                 #data.pop(0)
                 i = result.split(',')
                 t = datetime.strptime(i[0], '%Y/%m/%d') + timedelta(hours=23)
                 t_mk = int(time.mktime(t.timetuple())) * 1000
-                data.append([t_mk] + list(map(int, i[2:])))
+                append_flag = bool(str(t_mk) not in str(data))
+                # check result: end date data not in FUT_{}.json
+                if str(t_mk) not in str(data):
+                   data.append([t_mk] + list(map(int, i[2:])))
         with open('FUT_{}.json'.format(fut), 'w') as f:
             json.dump(data, f, indent=4)
 

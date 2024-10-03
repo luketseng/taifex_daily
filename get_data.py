@@ -65,6 +65,126 @@ class PraserDataTools():
                 cursor.execute(SQL)
                 conn.commit()
 
+    def parser_data(self, item, element):
+        if item == "Fut" or item == "OP":
+            printhere_element = element
+           # # Get all the child elements with class "section"
+           # section_elements = printhere_element.find_elements_by_class_name('section')
+
+           # # Access the third "section" element (index starts from 0)
+           # third_section_element = section_elements[-1]
+           # #print(third_section_element)
+
+            # Use XPath to find the specific p element (fourth one)
+            try:
+                fourth_p_element = printhere_element.find_element_by_xpath('//*[@id="printhere"]/div[4]/p[1]')
+            except:
+                print(f"The date not find the table and sys.exit")
+                sys.exit()
+
+            # Locate the span element within the p element
+            span_element = fourth_p_element.find_element_by_class_name('right')
+
+            # Extract text content from the span
+            span_text_date = span_element.get_attribute('textContent')[2:]
+            print("print date: ", span_text_date)
+            data = [f"{span_text_date}"]
+
+           # ### get title region
+           # title_element = printhere_element.find_element_by_xpath('//*[@id="printhere"]/div[4]/div[2]/table/thead')
+           # # Extract table header rows
+           # header_rows = title_element.find_elements_by_xpath('tr')
+
+           # # Initialize empty data structure for JSON
+           # data = []
+
+           # # Iterate through header rows
+           # for row in header_rows:
+           #     # Extract header cells (th elements)
+           #     header_cells = row.find_elements_by_tag_name('th')
+
+           #     # Initialize empty row data
+           #     row_data = []
+
+           #     # Iterate through header cells
+           #     for cell in header_cells:
+           #         # Extract cell content (text within <div> if present)
+           #         #cell_content = cell.find_element_by_tag_name('div').text if cell.find_element_by_tag_name('div') else cell.text
+           #         try:
+           #             cell_content = cell.find_element_by_tag_name('div').text
+           #         except:
+           #             cell_content = cell.text  # Use cell text if no div found
+
+           #         # Remove any leading/trailing whitespace and newlines
+           #         cell_content = cell_content.strip().replace("\n", "")
+
+           #         # Append cell content to row data
+           #         row_data.append(cell_content)
+
+           #     # Append row data to main data structure
+           #     data.append(row_data)
+
+           # # Convert data to JSON with Unicode encoding (default UTF-8)
+           # json_data = json.dumps(data, indent=4, ensure_ascii=False)
+           # print(json_data)
+
+            ### get content region
+            content_element = printhere_element.find_element_by_xpath('//*[@id="printhere"]/div[4]/div[2]/table/tbody')
+            # Extract table content rows
+            content_rows = content_element.find_elements_by_xpath('tr')
+
+            # Initialize empty data structure for JSON
+           # data = []
+
+            # Iterate through content rows
+            for row in content_rows:
+                # Extract content cells (th elements)
+                content_cells = row.find_elements_by_tag_name('td')
+
+                # Initialize empty row data
+                row_data = []
+
+                # Iterate through content cells
+                for cell in content_cells:
+                    # Extract cell content (text within <div> if present)
+                    #cell_content = cell.find_element_by_tag_name('div').text if cell.find_element_by_tag_name('div') else cell.text
+                    divs = []
+                    try:
+                        #cell_content = cell.find_element_by_tag_name('div').text
+                        #print(cell_content)
+
+                        # Find all <div> elements within the cell
+                        divs = cell.find_elements_by_tag_name('div')
+                        #print(divs)
+
+                        # If there are any divs, extract the text from the last one
+                        if divs:
+                            if item == "Fut":
+                                cell_content = divs[0].text  # Access the last element using -1
+                            if item == "OP":
+                                cell_content = divs[-1].text  # Access the last element using -1
+                        else:
+                            assert False
+                    except:
+                        cell_content = cell.text  # Use cell text if no div found
+
+                    # Remove any leading/trailing whitespace and newlines
+                    cell_content = cell_content.strip().replace("\n", "")
+
+                    # Append cell content to row data
+                    row_data.append(cell_content)
+
+                # Append row data to main data structure
+                data.append(row_data)
+
+            # Convert data to JSON with Unicode encoding (default UTF-8)
+            json_data = json.dumps(data, indent=4, ensure_ascii=False)
+            print(json_data)
+
+            # Return the JSON string
+            return data
+
+
     def insert_data_from_url(self, item=None, date=''):
         '''item [Fut|SPOT|OP]'''
         self.item = item
@@ -75,6 +195,7 @@ class PraserDataTools():
         #options.add_argument('--disable-dev-shm-usage')
         '''open driver via different browser
             with Firefox(firefox_options=options) as driver:'''
+        print("item", item)
         with Chrome(options=options) as driver:
             self.lines_data = list()
             if item == 'SPOT':
@@ -84,33 +205,48 @@ class PraserDataTools():
                     .format(date.replace('/', '')))
                 e = driver.find_elements_by_tag_name('tr')
                 for i in e:
-                    #print(i.text.split())
+                    print(i.text.split())
                     self.lines_data.append(i.text.split())
 
             if item == 'Fut' or item == 'OP':
                 if item == 'Fut':
-                    driver.get('https://www.taifex.com.tw/cht/3/futContractsDateExcel')
-                    col_num = list(range(3)) + list(range(3, 15))
-                    split_size = [0, 2, 6, 9, 11, 15, 17, 21, 23, 27, 29, 33, 35, 39, 41, 45]
-                if item == 'OP':
-                    driver.get('https://www.taifex.com.tw/cht/3/callsAndPutsDateExcel')
-                    col_num = list(range(3)) + list(range(3, 9))
-                    split_size = [0, 2, 6, 8, 11, 15, 17, 21, 23, 27, 29, 33, 35, 39, 41, 45]
+                    #driver.get('https://www.taifex.com.tw/cht/3/futContractsDateExcel')
+                    # access to get fut web
+                    taifex_fut_contracts_date_url = 'https://www.taifex.com.tw/cht/3/futContractsDate'
+                    driver.get(taifex_fut_contracts_date_url)
 
-                e = driver.find_element_by_xpath('//*[@id="printhere"]/div[2]/table/tbody/tr[1]/td/p/span[2]')
-                date_flag = '{}\t{}'.format(driver.title, e.text)
-                #print(repr(date_flag.split()))
-                self.lines_data.append(date_flag.split())
-                e = driver.find_elements_by_tag_name('tbody')[1]
-                for i in col_num:
-                    row = e.find_elements_by_tag_name('tr')[i]
-                    if i != 2:
-                        line = row.text.split()
-                    else:
-                        line_str = row.text.replace('\n', '')
-                        line = [line_str[split_size[i]:ele] for i, ele in enumerate(split_size[1:], 0)]
-                    #print(line)
-                    self.lines_data.append(line)
+                if item == 'OP':
+                    #driver.get('https://www.taifex.com.tw/cht/3/callsAndPutsDateExcel')
+                    taifex_fut_contracts_date_url = 'https://www.taifex.com.tw/cht/3/callsAndPutsDate'
+                    driver.get(taifex_fut_contracts_date_url)
+
+                # Locate the element with id="queryDate"
+                query_date_element = driver.find_element_by_id('queryDate')
+
+                # Get the current value of the element
+                current_date = query_date_element.get_attribute('value')
+                print('Current date:', current_date)
+
+                # Modify the value of the element
+                mod_date = date if date else current_date
+                query_date_element.clear()
+                query_date_element.send_keys(mod_date)
+
+                # Get the current value of the element again
+                current_date = query_date_element.get_attribute('value')
+                print('Current date after modify:', current_date)
+
+                # Locate the element with id="button"
+                button_element = driver.find_element_by_id('button')
+
+                # Click the button
+                button_element.click()
+
+                # Locate the parent element with id="printhere"
+                printhere_element = driver.find_element_by_id('printhere')
+
+                self.lines_data = self.parser_data(item, printhere_element)
+
             '''use data_line_list parser'''
             insert_data = self.pre_insert_db(item)
             #print(insert_data)
@@ -126,36 +262,47 @@ class PraserDataTools():
         lines_str = ''
         if item == 'Fut' or item == 'OP':
             '''check date data is today date'''
-            if self.date not in self.lines_data[0][1]:
+            if self.date not in self.lines_data:
                 print('Not get {} {} line data'.format(self.date, item))
                 sys.exit()
             (date, COM, II, PC) = ('', '', '', '')
-            for line_data in self.lines_data[:1] + self.lines_data[4:]:
-                if len(line_data) == 2:
-                    date = line_data[1][2:]
-                    self.date = date
-                else:
-                    line_str = ''
-                    if len(line_data[:-12]) == 3:
-                        COM = cht_maps[line_data[1]]
-                        II = cht_maps[line_data[2]]
-                    elif len(line_data[:-12]) == 4:
-                        COM = cht_maps[line_data[1]]
-                        PC = cht_maps[line_data[2]]
-                        II = cht_maps[line_data[3]]
-                    elif len(line_data[:-12]) == 2:
-                        PC = cht_maps[line_data[0]]
-                        II = cht_maps[line_data[1]]
-                    elif len(line_data[:-12]) == 1:
-                        II = cht_maps[line_data[0]]
 
-                    value = ','.join([i.replace(',', '') for i in line_data[-12:]])
-                    if item == 'Fut':
-                        line_str = '({},{},{},{}),'.format(repr(date), repr(COM), repr(II), value)
-                    elif item == 'OP':
-                        line_str = '({},{},{},{},{}),'.format(repr(date), repr(COM), repr(PC), repr(II), value)
-                    #print(line_str)
-                    lines_str += line_str
+            date = self.lines_data[0]
+            # loop table content rows
+            print("loop table content rows")
+            part_lines_data = self.lines_data[1:13] if item == 'Fut' else self.lines_data[1:7]
+            for line_data in part_lines_data:
+                # 16 cell mean have COM info
+                if len(line_data) == 15:
+                    COM = cht_maps.get(line_data[1])
+                    if not COM:
+                        print(f"Not support {line_data[1]}")
+                        continue
+                    II = cht_maps[line_data[2]]
+                elif len(line_data) == 13:
+                    II = cht_maps[line_data[0]]
+                elif len(line_data) == 16:
+                    COM = cht_maps.get(line_data[1])
+                    if not COM:
+                        print(f"Not support {line_data[1]}")
+                        continue
+                    PC = cht_maps.get(line_data[2])
+                    II = cht_maps[line_data[3]]
+                elif len(line_data) == 14:
+                    PC = cht_maps.get(line_data[0])
+                    II = cht_maps[line_data[1]]
+                else:
+                    continue
+                value = ','.join([i.replace(',', '') for i in line_data[-12:]])
+
+                if item == 'Fut':
+                    line_str = '({},{},{},{}),'.format(repr(date), repr(COM), repr(II), value)
+                elif item == 'OP':
+                    line_str = '({},{},{},{},{}),'.format(repr(date), repr(COM), repr(PC), repr(II), value)
+                print(line_str)
+                lines_str += line_str
+            #assert False
+
         elif item == 'SPOT':
             date = ''
             for line_data in self.lines_data[:1] + self.lines_data[2:-1]:
@@ -250,6 +397,7 @@ class PraserDataTools():
                 value = float('{:.2f}'.format(
                     ((req[-2][3] + req[-1][4]) - (req[-2][4] + req[-1][3])) / 100000))
                 data_table[req[-2][0]].append(value)
+            #print(json.dumps(data_table))
             output_data = list()
             for k, v in data_table.items():
                 t = datetime.strptime(k, '%Y/%m/%d') + timedelta(hours=23)
@@ -315,8 +463,8 @@ if __name__ == '__main__':
     '''daily to do'''
     '''insert daily data to DB'''
     tools.date = date.today().strftime('%Y/%m/%d')
-    #tools.date = date(2023, 3, 20).strftime('%Y/%m/%d')
-    tools.insert_data_from_url(item='Fut')
-    tools.insert_data_from_url(item='OP')
-    tools.insert_data_from_url(item='SPOT')
+    #tools.date = date(2024, 4, 16).strftime('%Y/%m/%d')
+    tools.insert_data_from_url(item='Fut', date=tools.date)
+    tools.insert_data_from_url(item='OP', date=tools.date)
+    tools.insert_data_from_url(item='SPOT', date=tools.date)
     tools.strategy_out_put()

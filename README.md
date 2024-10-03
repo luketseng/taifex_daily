@@ -29,3 +29,9 @@ Example
 
     $ ./mining_rpt.py -d 20190101-20190102
     $ ./mining_rpt.py -e TX 300 -d 20190101
+
+
+Reference for crontab
+--------------
+30 15,20 * * 1-4 ./git/workspace/fex_daily.sh
+30 15,20 * * 5 ./git/workspace/fex_daily.sh 4
