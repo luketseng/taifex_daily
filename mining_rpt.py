@@ -24,6 +24,7 @@ import sys
 import os
 import zipfile
 import argparse
+
 # import re
 import sqlite3
 import logging
@@ -39,9 +40,10 @@ import subprocess
 from devices.gdrive import gdrive
 
 # Set up module-level constants
-DEFAULT_DB_NAME = 'FCT_DB.db'
-ITEMS = ('fut_rpt', 'opt_rpt')
+DEFAULT_DB_NAME = "FCT_DB.db"
+ITEMS = ("fut_rpt", "opt_rpt")
 LOGGER = None  # Will be initialized later
+
 
 class TaifexReportMiner:
     """
@@ -52,7 +54,7 @@ class TaifexReportMiner:
     to various formats for analysis.
     """
 
-    def __init__(self, date: str = None, item: str = 'fut_rpt', config_path: str = None):
+    def __init__(self, date: str = None, item: str = "fut_rpt", config_path: str = None):
         """
         Initialize the TAIFEX report miner
 
@@ -68,7 +70,7 @@ class TaifexReportMiner:
         self.config = self._load_config(config_path)
 
         # Set date and item
-        today_str = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0).strftime('%Y_%m_%d')
+        today_str = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0).strftime("%Y_%m_%d")
         self.date = date if date else today_str
         self.item = item
 
@@ -83,9 +85,9 @@ class TaifexReportMiner:
     def _load_config(self, config_path: str = None) -> Dict[str, Any]:
         """Load configuration from JSON file"""
         if config_path is None:
-            config_path = self.base_path / 'config.json'
+            config_path = self.base_path / "config.json"
 
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
     def _setup_report_info(self):
@@ -94,23 +96,25 @@ class TaifexReportMiner:
             self.report_info = self.config[self.item].copy()
 
             # Set filename based on report type
-            if self.item == 'fut_rpt':
-                self.report_info['filename'] = f"Daily_{self.date}.zip"
-            elif self.item == 'opt_rpt':
-                self.report_info['filename'] = f"OptionsDaily_{self.date}.zip"
+            if self.item == "fut_rpt":
+                self.report_info["filename"] = f"Daily_{self.date}.zip"
+            elif self.item == "opt_rpt":
+                self.report_info["filename"] = f"OptionsDaily_{self.date}.zip"
 
             # Set directory path
-            self.report_info['rptdirpath'] = str(self.base_path / self.item)
+            self.report_info["rptdirpath"] = str(self.base_path / self.item)
 
-            LOGGER.info(f"Report info: {self.report_info['filename']} in {self.report_info['rptdirpath']} "
-                        f"via URL: {self.report_info['url']}")
+            LOGGER.info(
+                f"Report info: {self.report_info['filename']} in {self.report_info['rptdirpath']} "
+                f"via URL: {self.report_info['url']}"
+            )
         except KeyError:
             LOGGER.error(f"Configuration error: Item '{self.item}' not found in config")
             raise ValueError(f"Item '{self.item}' not found in configuration")
 
     def _init_gdrive(self):
         """Initialize Google Drive client if not already initialized"""
-        if 'gdevice' not in globals():
+        if "gdevice" not in globals():
             global gdevice
             gdevice = gdrive()
 
@@ -125,11 +129,11 @@ class TaifexReportMiner:
             Path to downloaded file
         """
         # Create report directory if not exists
-        report_dir = Path(self.report_info['rptdirpath'])
+        report_dir = Path(self.report_info["rptdirpath"])
         report_dir.mkdir(exist_ok=True)
 
         # Destination file path
-        dest_path = report_dir / self.report_info['filename']
+        dest_path = report_dir / self.report_info["filename"]
 
         # Skip download if file exists and not in recover mode
         if not recover and dest_path.exists():
@@ -142,10 +146,12 @@ class TaifexReportMiner:
 
         try:
             # Use subprocess instead of os.system for better error handling
-            result = subprocess.run(['wget', '-O', str(dest_path), url],
-                                    capture_output=True,
-                                    text=True,
-                                    check=True)
+            result = subprocess.run(
+                ["wget", "-O", str(dest_path), url],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             LOGGER.debug(f"wget output: {result.stdout}")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Download failed: {e.stderr}")
@@ -168,7 +174,7 @@ class TaifexReportMiner:
             True if file is valid, raises exception otherwise
         """
         try:
-            with zipfile.ZipFile(file_path, 'r') as zip_file:
+            with zipfile.ZipFile(file_path, "r") as zip_file:
                 zip_file.testzip()
             LOGGER.info(f"Successfully verified ZIP file: {file_path}")
             return True
@@ -178,7 +184,11 @@ class TaifexReportMiner:
                 file_path.unlink()
             raise ValueError(f"Downloaded file is not a valid ZIP: {file_path}")
 
-    def extract_report(self, zip_path: Optional[Path] = None, extract_dir: Optional[Path] = None) -> Path:
+    def extract_report(
+        self,
+        zip_path: Optional[Path] = None,
+        extract_dir: Optional[Path] = None,
+    ) -> Path:
         """
         Extract report from ZIP file
 
@@ -191,11 +201,11 @@ class TaifexReportMiner:
         """
         # Use provided zip_path or construct from report info
         if zip_path is None:
-            zip_path = Path(self.report_info['rptdirpath']) / self.report_info['filename']
+            zip_path = Path(self.report_info["rptdirpath"]) / self.report_info["filename"]
 
         # Default extract directory is tmp subdirectory of report directory
         if extract_dir is None:
-            extract_dir = Path(self.report_info['rptdirpath']) / 'tmp'
+            extract_dir = Path(self.report_info["rptdirpath"]) / "tmp"
 
         # Create extract directory if not exists
         extract_dir.mkdir(exist_ok=True)
@@ -207,7 +217,7 @@ class TaifexReportMiner:
 
         # Extract files
         try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_file:
+            with zipfile.ZipFile(zip_path, "r") as zip_file:
                 zip_file.extractall(extract_dir)
                 extracted_files = zip_file.namelist()
 
@@ -226,8 +236,8 @@ class TaifexReportMiner:
         """
         LOGGER.info(f"Extracting all reports in {self.report_info['rptdirpath']}")
 
-        report_dir = Path(self.report_info['rptdirpath'])
-        extract_dir = report_dir / 'tmp'
+        report_dir = Path(self.report_info["rptdirpath"])
+        extract_dir = report_dir / "tmp"
         extract_dir.mkdir(exist_ok=True)
 
         if not report_dir.is_dir():
@@ -236,10 +246,10 @@ class TaifexReportMiner:
 
         # Process each ZIP file in the directory
         zip_count = 0
-        for file_path in report_dir.glob('*.zip'):
+        for file_path in report_dir.glob("*.zip"):
             try:
                 self._verify_zip_file(file_path)
-                with zipfile.ZipFile(file_path, 'r') as zip_file:
+                with zipfile.ZipFile(file_path, "r") as zip_file:
                     for filename in zip_file.namelist():
                         zip_file.extract(filename, extract_dir)
                         LOGGER.debug(f"Extracted {filename} to {extract_dir}")
@@ -261,7 +271,7 @@ class TaifexReportMiner:
         Returns:
             True if upload was successful
         """
-        file_path = Path(self.report_info['rptdirpath']) / self.report_info['filename']
+        file_path = Path(self.report_info["rptdirpath"]) / self.report_info["filename"]
 
         if not file_path.exists():
             LOGGER.warning(f"File not found for upload: {file_path}")
@@ -275,7 +285,7 @@ class TaifexReportMiner:
             LOGGER.error(f"Failed to upload to Google Drive: {e}")
             return False
 
-    def parse_report_to_db(self, symbol: str = 'TX') -> bool:
+    def parse_report_to_db(self, symbol: str = "TX") -> bool:
         """
         Parse report data and store in database
 
@@ -286,21 +296,20 @@ class TaifexReportMiner:
             True if parsing was successful
         """
         # Validate symbol
-        if self.item == 'fut_rpt' and symbol not in self.report_info.get('symbol', ['TX']):
+        if self.item == "fut_rpt" and symbol not in self.report_info.get("symbol", ["TX"]):
             LOGGER.warning(f"Symbol '{symbol}' not in configured symbols. Using default 'TX'")
-            symbol = 'TX'
+            symbol = "TX"
 
         # Paths to ZIP and extracted report
-        zip_path = Path(self.report_info['rptdirpath']) / self.report_info['filename']
-        rpt_path = Path(self.report_info['rptdirpath']) / 'tmp' / self.report_info['filename'].replace(
-            '.zip', '.rpt')
+        zip_path = Path(self.report_info["rptdirpath"]) / self.report_info["filename"]
+        rpt_path = Path(self.report_info["rptdirpath"]) / "tmp" / self.report_info["filename"].replace(".zip", ".rpt")
 
         # Ensure the report file exists, extract if not
         if not rpt_path.exists() or args.recover:
             if not zip_path.exists():
                 LOGGER.info(f"ZIP file not found locally: {zip_path}")
                 try:
-                    gdevice.GetContentFile(self.report_info['filename'], str(zip_path))
+                    gdevice.GetContentFile(self.report_info["filename"], str(zip_path))
                 except Exception as e:
                     LOGGER.error(f"Failed to retrieve file from Google Drive: {e}")
                     return False
@@ -321,10 +330,10 @@ class TaifexReportMiner:
             True if processing was successful
         """
         # Extract date from the report file name
-        proc_date = datetime.strptime(self.date, '%Y_%m_%d')
+        proc_date = datetime.strptime(self.date, "%Y_%m_%d")
 
         # Extract data using grep for the specified symbol and month
-        current_month = proc_date.strftime('%Y%m')
+        current_month = proc_date.strftime("%Y%m")
         grep_cmd = f"cat {rpt_path} | grep ,{symbol} | grep -P '{current_month}\\s+'"
         LOGGER.debug(f"Running grep command: {grep_cmd}")
 
@@ -332,13 +341,13 @@ class TaifexReportMiner:
 
         # If no data for current month, try next month (for end-of-month reports)
         if not tick_result.strip():
-            next_month = (proc_date + timedelta(weeks=4)).strftime('%Y%m')
+            next_month = (proc_date + timedelta(weeks=4)).strftime("%Y%m")
             grep_cmd = f"cat {rpt_path} | grep ,{symbol} | grep -P '{next_month}\\s+'"
             LOGGER.debug(f"No data for current month, trying next month: {grep_cmd}")
             tick_result = subprocess.run(grep_cmd, shell=True, capture_output=True, text=True).stdout
 
         # Clean up the data
-        tick_result = tick_result.strip().replace(',', ' ').replace('*', ' ')
+        tick_result = tick_result.strip().replace(",", " ").replace("*", " ")
         if not tick_result:
             LOGGER.warning(f"No data found for symbol {symbol} in {rpt_path}")
             return False
@@ -356,8 +365,7 @@ class TaifexReportMiner:
 
         # Validate the data shape
         if len(raw_data) / tick_cols != num_ticks:
-            LOGGER.error(
-                f"Data shape mismatch: {len(raw_data)} elements, {tick_cols} columns, {num_ticks} rows")
+            LOGGER.error(f"Data shape mismatch: {len(raw_data)} elements, {tick_cols} columns, {num_ticks} rows")
             return False
 
         # Reshape the data into a 2D array
@@ -430,13 +438,13 @@ class TaifexReportMiner:
         Returns:
             datetime: The starting time for candle generation.
         """
-        first_tick_time = datetime.strptime(first_tick[3], '%H%M%S')
+        first_tick_time = datetime.strptime(first_tick[3], "%H%M%S")
         if first_tick_time.hour == 15:
             # Night session starts at 15:00
-            return datetime.strptime(f"{first_tick[0]}150000", '%Y%m%d%H%M%S') + timedelta(minutes=1)
+            return datetime.strptime(f"{first_tick[0]}150000", "%Y%m%d%H%M%S") + timedelta(minutes=1)
         else:
             # Day session starts at 08:45
-            return datetime.strptime(f"{first_tick[0]}084500", '%Y%m%d%H%M%S') + timedelta(minutes=1)
+            return datetime.strptime(f"{first_tick[0]}084500", "%Y%m%d%H%M%S") + timedelta(minutes=1)
 
     def _parse_tick_time(self, tick: np.ndarray) -> datetime:
         """
@@ -448,7 +456,7 @@ class TaifexReportMiner:
         Returns:
             datetime: The parsed tick time.
         """
-        return datetime.strptime(f"{tick[0]}{tick[3]}", '%Y%m%d%H%M%S')
+        return datetime.strptime(f"{tick[0]}{tick[3]}", "%Y%m%d%H%M%S")
 
     def _is_tick_in_current_minute(self, tick_time: datetime, start_time: datetime) -> bool:
         """
@@ -461,9 +469,10 @@ class TaifexReportMiner:
         Returns:
             bool: True if the tick belongs to the current minute, False otherwise.
         """
-        return (start_time - timedelta(minutes=1) <= tick_time < start_time or tick_time.time() in [
+        return start_time - timedelta(minutes=1) <= tick_time < start_time or tick_time.time() in [
             datetime.strptime("05:00:00", "%H:%M:%S").time(),
-            datetime.strptime("13:45:00", "%H:%M:%S").time()])
+            datetime.strptime("13:45:00", "%H:%M:%S").time(),
+        ]
 
     def _generate_candle(self, ticks: List[Tuple], start_time: datetime) -> Tuple:
         """
@@ -477,18 +486,26 @@ class TaifexReportMiner:
             Tuple: A tuple representing the candle (Date, Time, Open, High, Low, Close, Volume).
         """
         temp_array = np.array(ticks)
-        date_str = start_time.strftime('%Y/%m/%d')
-        time_str = start_time.strftime('%H:%M:%S')
+        date_str = start_time.strftime("%Y/%m/%d")
+        time_str = start_time.strftime("%H:%M:%S")
         open_price = int(temp_array[0, 4])
-        high_price = int(temp_array[:, 4].astype('int').max())
-        low_price = int(temp_array[:, 4].astype('int').min())
+        high_price = int(temp_array[:, 4].astype("int").max())
+        low_price = int(temp_array[:, 4].astype("int").min())
         close_price = int(temp_array[-1, 4])
-        volume = int(temp_array[:, 5].astype('int').sum() // 2)  # Divide by 2 for buy/sell records
+        volume = int(temp_array[:, 5].astype("int").sum() // 2)  # Divide by 2 for buy/sell records
 
         LOGGER.debug(
             f"Generated candle: {date_str}, {time_str}, {open_price}, {high_price}, {low_price}, {close_price}, {volume}"
         )
-        return (date_str, time_str, open_price, high_price, low_price, close_price, volume)
+        return (
+            date_str,
+            time_str,
+            open_price,
+            high_price,
+            low_price,
+            close_price,
+            volume,
+        )
 
     def _adjust_start_time(self, tick: np.ndarray, start_time: datetime) -> datetime:
         """
@@ -501,7 +518,7 @@ class TaifexReportMiner:
         Returns:
             datetime: The adjusted start time.
         """
-        return datetime.strptime(f"{tick[0]}{tick[3][:4]}00", '%Y%m%d%H%M%S') + timedelta(minutes=1)
+        return datetime.strptime(f"{tick[0]}{tick[3][:4]}00", "%Y%m%d%H%M%S") + timedelta(minutes=1)
 
     def _update_progress_bar(self, current_tick: int, total_ticks: int, progress_step: int):
         """
@@ -513,9 +530,8 @@ class TaifexReportMiner:
             progress_step (int): The step size for updating the progress bar.
         """
         progress = (current_tick / total_ticks) * 100
-        progress_bar = '=' * (current_tick // progress_step) + '>' + ' ' * (32 -
-                                                                            (current_tick // progress_step))
-        sys.stdout.write(f'\r[{progress_bar}][{progress:.1f}%]')
+        progress_bar = "=" * (current_tick // progress_step) + ">" + " " * (32 - (current_tick // progress_step))
+        sys.stdout.write(f"\r[{progress_bar}][{progress:.1f}%]")
         sys.stdout.flush()
 
     def _store_candles_in_db(self, candles: List[Tuple], symbol: str) -> bool:
@@ -542,9 +558,9 @@ class TaifexReportMiner:
             cursor = conn.cursor()
 
             # Use TX as default symbol if not in configured symbols
-            if symbol not in self.report_info.get('symbol', ['TX']):
+            if symbol not in self.report_info.get("symbol", ["TX"]):
                 LOGGER.warning(f"Symbol '{symbol}' not in configuration, using 'TX'")
-                symbol = 'TX'
+                symbol = "TX"
 
             # Delete existing data for the same date
             # This ensures we don't have duplicate data
@@ -552,7 +568,7 @@ class TaifexReportMiner:
             cursor.execute(delete_query, (candles[-1][0], candles[-1][1]))
 
             # Special handling for session transitions
-            if candles[0][1] == '15:01:00':
+            if candles[0][1] == "15:01:00":
                 # Handle night session data
                 delete_query1 = f"DELETE FROM tw{symbol} WHERE Date=? AND Time>=?;"
                 delete_query2 = f"DELETE FROM tw{symbol} WHERE Date=? AND Time<=?;"
@@ -577,14 +593,16 @@ class TaifexReportMiner:
             LOGGER.error(f"Database error: {e}")
             return False
         finally:
-            if 'conn' in locals():
+            if "conn" in locals():
                 conn.close()
 
-    def export_data_to_txt(self,
-                           symbol: str = None,
-                           interval: int = None,
-                           start_date: datetime = None,
-                           end_date: datetime = None) -> str:
+    def export_data_to_txt(
+        self,
+        symbol: str = None,
+        interval: int = None,
+        start_date: datetime = None,
+        end_date: datetime = None,
+    ) -> str:
         """
         Export data from database to text file
 
@@ -598,18 +616,18 @@ class TaifexReportMiner:
             Path to the exported file
         """
         # Get global args if available
-        args = globals().get('args', None)
+        args = globals().get("args", None)
 
         # Validate arguments
         if symbol is None or interval is None:
-            if args is None or not hasattr(args, 'export') or args.export is None or len(args.export) != 2:
+            if args is None or not hasattr(args, "export") or args.export is None or len(args.export) != 2:
                 LOGGER.error("Invalid export arguments")
                 raise ValueError("Export requires symbol and interval")
             symbol = args.export[0]
             interval = int(args.export[1])
 
         # Validate symbol
-        symbol = 'TX' if symbol not in self.report_info.get('symbol', ['TX']) else symbol
+        symbol = "TX" if symbol not in self.report_info.get("symbol", ["TX"]) else symbol
 
         # Validate interval
         valid_intervals = [1, 5, 15, 30, 60, 300]
@@ -617,7 +635,7 @@ class TaifexReportMiner:
 
         # Use date range from arguments if not provided
         if start_date is None or end_date is None:
-            if args is None or not hasattr(args, 'date'):
+            if args is None or not hasattr(args, "date"):
                 today = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
                 start_date = today
                 end_date = today
@@ -627,8 +645,10 @@ class TaifexReportMiner:
                 start_date = date_range[0]
                 end_date = date_range[1]
 
-        LOGGER.info(f"Exporting data: symbol={symbol}, interval={interval}, "
-                    f"date_range={start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        LOGGER.info(
+            f"Exporting data: symbol={symbol}, interval={interval}, "
+            f"date_range={start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+        )
 
         # Connect to database
         db_path = self.base_path / DEFAULT_DB_NAME
@@ -636,21 +656,24 @@ class TaifexReportMiner:
         cursor = conn.cursor()
 
         # Format date string for output file
-        date_string = (f"{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}"
-                       if start_date != end_date else start_date.strftime('%Y%m%d'))
+        date_string = (
+            f"{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}"
+            if start_date != end_date
+            else start_date.strftime("%Y%m%d")
+        )
 
         # Output file path
         output_path = f"{symbol}_{date_string}"
 
         # Write header to file
-        header = 'Date,Time,Open,High,Low,Close,Volume'
-        with open(output_path, 'w') as f:
+        header = "Date,Time,Open,High,Low,Close,Volume"
+        with open(output_path, "w") as f:
             f.write(f"{header}\n")
 
         # Process each day
         current_date = start_date
         while current_date <= end_date:
-            formatted_date = current_date.strftime('%Y/%m/%d')
+            formatted_date = current_date.strftime("%Y/%m/%d")
             LOGGER.debug(f"Processing date: {formatted_date}")
 
             # Get data for the day
@@ -659,7 +682,7 @@ class TaifexReportMiner:
             # Write data to file if not empty
             if day_data.strip():
                 LOGGER.info(f"Writing data for {formatted_date}")
-                with open(output_path, 'a') as f:
+                with open(output_path, "a") as f:
                     f.write(day_data)
 
             # Move to next day
@@ -718,10 +741,10 @@ class TaifexReportMiner:
                 date_val = data_array[-1, 0]  # Use last row's date
                 time_val = data_array[-1, 1]  # Use last row's time
                 open_val = int(data_array[0, 2])  # First row's open
-                high_val = int(np.max(data_array[:, 3].astype('int')))  # Max high
-                low_val = int(np.min(data_array[:, 4].astype('int')))  # Min low
+                high_val = int(np.max(data_array[:, 3].astype("int")))  # Max high
+                low_val = int(np.min(data_array[:, 4].astype("int")))  # Min low
                 close_val = int(data_array[-1, 5])  # Last row's close
-                volume_val = int(np.sum(data_array[:, 6].astype('int')))  # Sum of volume
+                volume_val = int(np.sum(data_array[:, 6].astype("int")))  # Sum of volume
 
                 # Format as CSV row
                 result += f"{date_val},{time_val},{open_val},{high_val},{low_val},{close_val},{volume_val}\n"
@@ -758,29 +781,29 @@ class TaifexReportMiner:
         try:
             # If JSON file exists, load it and append only the latest data
             if Path(json_path).exists():
-                with open(json_path, 'r') as f:
+                with open(json_path, "r") as f:
                     data = json.load(f)
 
-                #current_date = datetime.strptime('2025/05/06', '%Y/%m/%d')  # Default start date
-                #current_date = end_date
+                # current_date = datetime.strptime('2025/05/06', '%Y/%m/%d')  # Default start date
+                # current_date = end_date
                 current_date = start_date
-                #assert False, (current_date, type(current_date))
+                # assert False, (current_date, type(current_date))
                 while current_date <= end_date:
-
                     # Get only the last day's data to append
-                    day_data = self._get_data_for_day(cursor, symbol, 300, current_date.strftime('%Y/%m/%d'))
+                    day_data = self._get_data_for_day(cursor, symbol, 300, current_date.strftime("%Y/%m/%d"))
 
                     # Process and append if not empty and not already in the file
                     if day_data.strip():
                         LOGGER.info(f"Processing JSON data for {current_date.strftime('%Y-%m-%d')} to append")
                         for line in day_data.strip().splitlines():
-                            fields = line.split(',')
+                            fields = line.split(",")
                             date_str = fields[0]
 
                             # Convert to timestamp (milliseconds)
                             timestamp = int(
-                                time.mktime((datetime.strptime(date_str, '%Y/%m/%d') +
-                                             timedelta(hours=23)).timetuple()) * 1000)
+                                time.mktime((datetime.strptime(date_str, "%Y/%m/%d") + timedelta(hours=23)).timetuple())
+                                * 1000
+                            )
 
                             # Check if data for this timestamp already exists
                             if not any(str(timestamp) in str(entry) for entry in data):
@@ -790,22 +813,23 @@ class TaifexReportMiner:
                     current_date += timedelta(days=1)
             else:
                 # Generate full data set
-                start_date = datetime.strptime('2020/01/01', '%Y/%m/%d')  # Default start date
+                start_date = datetime.strptime("2020/01/01", "%Y/%m/%d")  # Default start date
                 current_date = start_date
                 while current_date <= end_date:
-                    day_data = self._get_data_for_day(cursor, symbol, 300, current_date.strftime('%Y/%m/%d'))
+                    day_data = self._get_data_for_day(cursor, symbol, 300, current_date.strftime("%Y/%m/%d"))
 
                     # Process if not empty
                     if day_data.strip():
                         LOGGER.info(f"Processing JSON data for {current_date.strftime('%Y-%m-%d')}")
                         for line in day_data.strip().splitlines():
-                            fields = line.split(',')
+                            fields = line.split(",")
                             date_str = fields[0]
 
                             # Convert to timestamp (milliseconds)
                             timestamp = int(
-                                time.mktime((datetime.strptime(date_str, '%Y/%m/%d') +
-                                             timedelta(hours=23)).timetuple()) * 1000)
+                                time.mktime((datetime.strptime(date_str, "%Y/%m/%d") + timedelta(hours=23)).timetuple())
+                                * 1000
+                            )
 
                             # Add the entry
                             data.append([timestamp] + [int(x) for x in fields[2:]])
@@ -813,7 +837,7 @@ class TaifexReportMiner:
                     # Move to next day
                     current_date += timedelta(days=1)
 
-            with open(json_path, 'w') as f:
+            with open(json_path, "w") as f:
                 json.dump(data, f, indent=4)
 
             LOGGER.info(f"JSON data exported to: {json_path} with {len(data)} entries")
@@ -824,6 +848,7 @@ class TaifexReportMiner:
             raise
         finally:
             conn.close()
+
 
 # Utility functions
 def setup_logging(level=logging.INFO) -> logging.Logger:
@@ -844,11 +869,12 @@ def setup_logging(level=logging.INFO) -> logging.Logger:
     if not LOGGER.handlers:
         console = logging.StreamHandler(sys.stdout)
         console.setLevel(level)
-        formatter = logging.Formatter('%(asctime)s | %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(asctime)s | %(name)s - %(levelname)s - %(message)s")
         console.setFormatter(formatter)
         LOGGER.addHandler(console)
 
     return LOGGER
+
 
 def validate_date_range(date_text: str, today: datetime = None) -> Tuple[datetime, datetime]:
     """
@@ -864,26 +890,26 @@ def validate_date_range(date_text: str, today: datetime = None) -> Tuple[datetim
     if today is None:
         today = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
 
-    date_parts = date_text.split('-')
+    date_parts = date_text.split("-")
 
     try:
-        start_date = datetime.strptime(date_parts[0], '%Y%m%d')
+        start_date = datetime.strptime(date_parts[0], "%Y%m%d")
         # Set end date to today if not provided
         end_date = today
         if len(date_parts) == 2:
-            end_date = datetime.strptime(date_parts[1], '%Y%m%d')
+            end_date = datetime.strptime(date_parts[1], "%Y%m%d")
     except ValueError:
         LOGGER.error(f"Invalid date format: '{date_text}'. Expected format: YYYYMMDD or YYYYMMDD-YYYYMMDD")
         raise ValueError(f"Invalid date format: '{date_text}'")
 
     # Validate date range
     if start_date > end_date or start_date > today:
-        LOGGER.error(
-            f"Invalid date range: start date {start_date} is after end date {end_date} or today {today}")
+        LOGGER.error(f"Invalid date range: start date {start_date} is after end date {end_date} or today {today}")
         raise ValueError(f"Invalid date range: {start_date} to {end_date}")
 
     LOGGER.info(f"Date range: {start_date} to {end_date}")
     return start_date, end_date
+
 
 def parse_arguments():
     """
@@ -896,28 +922,36 @@ def parse_arguments():
 
     parser = argparse.ArgumentParser(description="TAIFEX Report Mining and Processing Tool")
     parser.add_argument(
-        '-d',
-        '--date',
+        "-d",
+        "--date",
         type=str,
-        default=today.strftime('%Y%m%d'),
-        help='Date range for download in format YYYYMMDD or YYYYMMDD-YYYYMMDD')
+        default=today.strftime("%Y%m%d"),
+        help="Date range for download in format YYYYMMDD or YYYYMMDD-YYYYMMDD",
+    )
     parser.add_argument(
         "-e",
         "--export",
-        nargs='+',
+        nargs="+",
         type=str,
         default=None,
-        help="Export data in format: SYMBOL INTERVAL (e.g., TX 300). Use with -d for date range.")
+        help="Export data in format: SYMBOL INTERVAL (e.g., TX 300). Use with -d for date range.",
+    )
     parser.add_argument(
-        '--upload-recover',
-        dest='recover',
+        "--upload-recover",
+        dest="recover",
         default=False,
-        action='store_true',
-        help='Force redownload and replace existing files in Google Drive')
+        action="store_true",
+        help="Force redownload and replace existing files in Google Drive",
+    )
     parser.add_argument(
-        '--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], default='INFO', help='Set logging level')
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set logging level",
+    )
 
     return parser.parse_args()
+
 
 def main():
     """
@@ -934,7 +968,7 @@ def main():
     setup_logging(getattr(logging, args.log_level))
 
     # Make args accessible globally
-    globals()['args'] = args
+    globals()["args"] = args
 
     # Validate date range
     start_date, end_date = validate_date_range(args.date)
@@ -953,7 +987,7 @@ def main():
     # Process each date in the range
     current_date = start_date
     while current_date <= end_date:
-        date_str = current_date.strftime('%Y_%m_%d')
+        date_str = current_date.strftime("%Y_%m_%d")
         LOGGER.info(f"Processing date: {date_str}")
 
         # Process each report type
@@ -969,8 +1003,8 @@ def main():
                 miner.upload_to_gdrive(recover=args.recover)
 
                 # For futures reports, process data for each symbol
-                if item == 'fut_rpt':
-                    for symbol in miner.report_info.get('symbol', ['TX']):
+                if item == "fut_rpt":
+                    for symbol in miner.report_info.get("symbol", ["TX"]):
                         try:
                             miner.parse_report_to_db(symbol)
                         except Exception as e:
@@ -983,5 +1017,6 @@ def main():
 
     LOGGER.info("TAIFEX data mining completed successfully")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -34,9 +34,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # Constants
-DB_NAME = 'II_DB.db'
-MARKET_DATA_DB = 'FCT_DB.db'
-DEFAULT_START_DATE = '2020/01/01'
+DB_NAME = "II_DB.db"
+MARKET_DATA_DB = "FCT_DB.db"
+DEFAULT_START_DATE = "2020/01/01"
+
 
 class TaifexDataParser:
     """
@@ -48,26 +49,27 @@ class TaifexDataParser:
 
     # Symbol and market participant mapping
     SYMBOL_MAP = {
-        '臺股期貨': 'TX',
-        '電子期貨': 'TE',
-        '金融期貨': 'TF',
-        '小型臺指期貨': 'MTX',
-        '臺指選擇權': 'TXO',
-        '買權': 'CALL',
-        '賣權': 'PUT',
-        '外資及陸資(不含外資自營商)': 'FOR',
-        '外資及陸資': 'FOR',
-        '外資': 'FOR',
-        '外資自營商': 'FOR_D',
-        '投信': 'INV',
-        '自營商(自行買賣)': 'DEA',
-        '自營商(避險)': 'DEA_H',
-        '自營商': 'DEA'}
+        "臺股期貨": "TX",
+        "電子期貨": "TE",
+        "金融期貨": "TF",
+        "小型臺指期貨": "MTX",
+        "臺指選擇權": "TXO",
+        "買權": "CALL",
+        "賣權": "PUT",
+        "外資及陸資(不含外資自營商)": "FOR",
+        "外資及陸資": "FOR",
+        "外資": "FOR",
+        "外資自營商": "FOR_D",
+        "投信": "INV",
+        "自營商(自行買賣)": "DEA",
+        "自營商(避險)": "DEA_H",
+        "自營商": "DEA",
+    }
 
     def __init__(self):
         """Initialize the parser with default values"""
         self.lines_data = []
-        self.date = date.today().strftime('%Y/%m/%d')
+        self.date = date.today().strftime("%Y/%m/%d")
         self.item = None
         self.base_path = Path(os.path.dirname(__file__))
 
@@ -96,12 +98,12 @@ class TaifexDataParser:
 
         try:
             # Detect encoding
-            with open(csv_path, 'rb') as f:
+            with open(csv_path, "rb") as f:
                 raw_data = f.read(10000)  # Read a sample to detect encoding
-                encoding = chardet.detect(raw_data)['encoding']
+                encoding = chardet.detect(raw_data)["encoding"]
 
             # Read file with correct encoding
-            with open(csv_path, 'r', encoding=encoding) as f:
+            with open(csv_path, "r", encoding=encoding) as f:
                 content = f.read()
 
             # Replace Chinese characters with English symbols
@@ -114,18 +116,18 @@ class TaifexDataParser:
 
                 # Process and insert data
                 lines_to_insert = []
-                for line in content.split('\n'):
+                for line in content.split("\n"):
                     if not line.strip():
                         continue
 
-                    fields = line.split(',')
+                    fields = line.split(",")
                     if len(fields) < 12:
                         continue
 
                     # Check if second field is a recognized symbol
                     if fields[1] in self.SYMBOL_MAP.values():
-                        title = repr(fields[:-12]).replace(' ', '').replace('[', '').replace(']', '')
-                        values = ','.join(fields[-12:])
+                        title = repr(fields[:-12]).replace(" ", "").replace("[", "").replace("]", "")
+                        values = ",".join(fields[-12:])
                         lines_to_insert.append(f"({title},{values})")
 
                 if lines_to_insert:
@@ -155,18 +157,18 @@ class TaifexDataParser:
 
         # Setup Chrome options
         options = ChromeOptions()
-        options.add_argument('--headless')
-        options.add_argument('--disable-features=VizDisplayCompositor')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
+        options.add_argument("--headless")
+        options.add_argument("--disable-features=VizDisplayCompositor")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
 
         try:
             with Chrome(options=options) as driver:
                 self.lines_data = []
 
-                if item == 'SPOT':
+                if item == "SPOT":
                     self._fetch_spot_data(driver)
-                elif item in ('Fut', 'OP'):
+                elif item in ("Fut", "OP"):
                     self._fetch_futures_options_data(driver, item)
                 else:
                     print(f"Unknown item type: {item}")
@@ -192,16 +194,16 @@ class TaifexDataParser:
             driver: Selenium WebDriver instance
         """
         # Format date string for URL
-        date_str = self.date.replace('/', '')
-        url = f'https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={date_str}&response=html'
+        date_str = self.date.replace("/", "")
+        url = f"https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={date_str}&response=html"
 
         try:
             driver.get(url)
             # Wait for the table to load
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, 'tr')))
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "tr")))
 
             # Extract table rows
-            rows = driver.find_elements(By.TAG_NAME, 'tr')
+            rows = driver.find_elements(By.TAG_NAME, "tr")
             for row in rows:
                 row_list = row.text.split()
                 print(row_list)
@@ -220,31 +222,31 @@ class TaifexDataParser:
         """
         try:
             # Navigate to the appropriate page
-            if item == 'Fut':
-                url = 'https://www.taifex.com.tw/cht/3/futContractsDate'
+            if item == "Fut":
+                url = "https://www.taifex.com.tw/cht/3/futContractsDate"
             else:  # 'OP'
-                url = 'https://www.taifex.com.tw/cht/3/callsAndPutsDate'
+                url = "https://www.taifex.com.tw/cht/3/callsAndPutsDate"
 
             driver.get(url)
 
             # Set the query date
-            date_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, 'queryDate')))
+            date_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "queryDate")))
 
-            current_date = date_field.get_attribute('value')
-            print(f'Default date on website: {current_date}')
+            current_date = date_field.get_attribute("value")
+            print(f"Default date on website: {current_date}")
 
             # Use provided date or keep current date
             target_date = self.date if self.date else current_date
             date_field.clear()
             date_field.send_keys(target_date)
-            print(f'Setting date to: {target_date}')
+            print(f"Setting date to: {target_date}")
 
             # Click the search button
-            search_button = driver.find_element(By.ID, 'button')
+            search_button = driver.find_element(By.ID, "button")
             search_button.click()
 
             # Wait for results to load
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, 'printhere')))
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "printhere")))
 
             # Parse the data table
             self._parse_table_data(driver, item)
@@ -264,8 +266,8 @@ class TaifexDataParser:
             # Find the date displayed in the results
             try:
                 date_element = driver.find_element(By.XPATH, '//*[@id="printhere"]/div[4]/p[1]')
-                date_span = date_element.find_element(By.CLASS_NAME, 'right')
-                date_text = date_span.get_attribute('textContent')[2:]
+                date_span = date_element.find_element(By.CLASS_NAME, "right")
+                date_text = date_span.get_attribute("textContent")[2:]
                 print(f"Data date from website: {date_text}")
 
                 # Initialize data list with the date
@@ -277,15 +279,15 @@ class TaifexDataParser:
 
             # Find and parse the content table
             content_element = driver.find_element(By.XPATH, '//*[@id="printhere"]/div[4]/div[2]/table/tbody')
-            rows = content_element.find_elements(By.TAG_NAME, 'tr')
+            rows = content_element.find_elements(By.TAG_NAME, "tr")
 
             for row in rows:
-                cells = row.find_elements(By.TAG_NAME, 'td')
+                cells = row.find_elements(By.TAG_NAME, "td")
                 row_data = []
 
                 for cell in cells:
                     # Handle different cell structures for Fut and OP
-                    divs = cell.find_elements(By.TAG_NAME, 'div')
+                    divs = cell.find_elements(By.TAG_NAME, "div")
                     if divs:
                         if item == "Fut":
                             cell_content = divs[0].text
@@ -318,13 +320,13 @@ class TaifexDataParser:
             Tuple containing (date, SQL value strings)
         """
         if not self.lines_data:
-            print('No data to prepare for database')
+            print("No data to prepare for database")
             return None
 
         values_list = []
-        date_str = ''
+        date_str = ""
 
-        if item in ('Fut', 'OP'):
+        if item in ("Fut", "OP"):
             # Check if we have the date in the data
             if self.date not in self.lines_data[0]:
                 print(f"Warning: Expected date {self.date} not found in data: {self.lines_data[0]}")
@@ -333,14 +335,13 @@ class TaifexDataParser:
             date_str = self.lines_data[0]
 
             # Process data rows - different number of rows for futures vs options
-            data_range = self.lines_data[1:13] if item == 'Fut' else self.lines_data[1:7]
+            data_range = self.lines_data[1:13] if item == "Fut" else self.lines_data[1:7]
 
-            symbol = ''
-            ii_type = ''
-            pc_type = ''  # Only used for options
+            symbol = ""
+            ii_type = ""
+            pc_type = ""  # Only used for options
 
             for row in data_range:
-
                 # Parse based on the number of columns in the row
                 if len(row) == 15:  # Futures data format
                     symbol = self.SYMBOL_MAP.get(row[1])
@@ -364,28 +365,28 @@ class TaifexDataParser:
                     continue
 
                 # Extract and clean the values
-                values = [val.replace(',', '') for val in row[-12:]]
-                values_str = ','.join(values)
+                values = [val.replace(",", "") for val in row[-12:]]
+                values_str = ",".join(values)
 
                 # Format the SQL values string based on data type
-                if item == 'Fut':
+                if item == "Fut":
                     value_str = f"({repr(date_str)},{repr(symbol)},{repr(ii_type)},{values_str})"
                 else:  # OP
                     value_str = f"({repr(date_str)},{repr(symbol)},{repr(pc_type)},{repr(ii_type)},{values_str})"
 
                 values_list.append(value_str)
 
-        elif item == 'SPOT':
+        elif item == "SPOT":
             # Process spot market data
             for row in self.lines_data[:1] + self.lines_data[2:-1]:
                 if len(row) == 2:
                     # Parse the date
-                    match = re.match(r'(\d+)年(\d+)月(\d+)日', row[0])
+                    match = re.match(r"(\d+)年(\d+)月(\d+)日", row[0])
                     if match:
                         year = int(match.group(1)) + 1911  # Convert from ROC to Gregorian
                         month = match.group(2)
                         day = match.group(3)
-                        date_str = f'{year}/{month}/{day}'
+                        date_str = f"{year}/{month}/{day}"
 
                         # Verify date matches requested date
                         if self.date not in date_str:
@@ -393,19 +394,19 @@ class TaifexDataParser:
                             return None
                 else:
                     # Process market data row
-                    ii_type = self.SYMBOL_MAP.get(row[0], '')
+                    ii_type = self.SYMBOL_MAP.get(row[0], "")
                     if not ii_type:
                         continue
 
-                    values = [val.replace(',', '') for val in row[-3:]]
-                    values_str = ','.join(values)
+                    values = [val.replace(",", "") for val in row[-3:]]
+                    values_str = ",".join(values)
                     value_str = f"({repr(date_str)},{repr(ii_type)},{values_str})"
                     values_list.append(value_str)
 
         if not values_list:
             return None
 
-        return (date_str, ','.join(values_list))
+        return (date_str, ",".join(values_list))
 
     def _store_data_in_db(self, date_str: str, values_sql: str) -> None:
         """
@@ -416,7 +417,7 @@ class TaifexDataParser:
             values_sql: SQL values string for insertion
         """
         db_path = self.base_path / DB_NAME
-        table_name = f'II_{self.item}'
+        table_name = f"II_{self.item}"
 
         try:
             with sqlite3.connect(db_path) as conn:
@@ -466,7 +467,7 @@ class TaifexDataParser:
             target_date: Date to calculate strategy for (default: self.date)
         """
         date_str = target_date if target_date else self.date
-        start_date_str = datetime.strptime(DEFAULT_START_DATE, '%Y/%m/%d').strftime('%Y/%m/%d')
+        start_date_str = datetime.strptime(DEFAULT_START_DATE, "%Y/%m/%d").strftime("%Y/%m/%d")
 
         print(f"Calculating trading strategy from {start_date_str} to {date_str}")
 
@@ -555,14 +556,14 @@ class TaifexDataParser:
             for date_key, values in data_table.items():
                 if len(values) >= 6:  # Only include complete records
                     # Convert date to timestamp (ms)
-                    dt = datetime.strptime(date_key, '%Y/%m/%d') + timedelta(hours=23)
+                    dt = datetime.strptime(date_key, "%Y/%m/%d") + timedelta(hours=23)
                     timestamp = int(time.mktime(dt.timetuple())) * 1000
 
                     # Format: [timestamp, position_change, total_value_bn, spot_amount_bn, price]
                     output_data.append([timestamp] + values[3:6] + [values[1]])
 
             # Write to JSON file
-            with open('data.json', 'w') as f:
+            with open("data.json", "w") as f:
                 json.dump(output_data, f, indent=4)
 
             print(f"Strategy data exported to data.json with {len(output_data)} entries")
@@ -581,7 +582,7 @@ class TaifexDataParser:
             db_path: Path to the database
             start_date_str: Start date for analysis
         """
-        #try:
+        # try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
@@ -604,7 +605,7 @@ class TaifexDataParser:
 
                 # Convert to numpy array for easier processing
                 rows_array = np.array(rows)
-                contract_data = rows_array[:, 1].astype('int')
+                contract_data = rows_array[:, 1].astype("int")
 
                 # Check if all rows have the same date
                 if len(set(rows_array[:, 0])) == 1:
@@ -615,7 +616,7 @@ class TaifexDataParser:
                     if row_counter > 4 and len(export_info) >= 4:
                         # Get last 4 sum values plus current
                         prev_data = np.array(export_info)
-                        last_sums = list(prev_data[:, 4][-4:].astype('int'))
+                        last_sums = list(prev_data[:, 4][-4:].astype("int"))
                         avg_val = float(np.mean(last_sums + [sum_val]))
                     else:
                         avg_val = 0
@@ -629,24 +630,26 @@ class TaifexDataParser:
                         bs_signal = 0
 
                     # Get day of week (1=Monday, 7=Sunday)
-                    day_of_week = datetime.strptime(date_val, '%Y/%m/%d').isoweekday()
+                    day_of_week = datetime.strptime(date_val, "%Y/%m/%d").isoweekday()
 
                     # Append to results
-                    export_info.append([
-                        date_val,  # Date
-                        *list(contract_data),  # Individual contract data
-                        sum_val,  # Sum of contracts
-                        avg_val,  # Moving average
-                        bs_signal,  # Buy/sell signal
-                        day_of_week  # Day of week
-                    ])
+                    export_info.append(
+                        [
+                            date_val,  # Date
+                            *list(contract_data),  # Individual contract data
+                            sum_val,  # Sum of contracts
+                            avg_val,  # Moving average
+                            bs_signal,  # Buy/sell signal
+                            day_of_week,  # Day of week
+                        ]
+                    )
 
                     row_counter += 1
 
             # Convert to JSON format with timestamps
             output_data = []
             for row in export_info:
-                dt = datetime.strptime(row[0], '%Y/%m/%d') + timedelta(hours=23)
+                dt = datetime.strptime(row[0], "%Y/%m/%d") + timedelta(hours=23)
                 timestamp = int(time.mktime(dt.timetuple())) * 1000
 
                 # Format: [timestamp, contract_data1, contract_data2, contract_data3, buy_sell_signal]
@@ -654,15 +657,16 @@ class TaifexDataParser:
                 extra_data = list(map(float, row[5:6]))
                 output_data.append([timestamp] + II_contract + extra_data)
 
-            #assert False, output_data
+            # assert False, output_data
             # Write to JSON file
-            with open('data_MTX.json', 'w') as f:
+            with open("data_MTX.json", "w") as f:
                 json.dump(output_data, f, indent=4)
 
             print(f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries")
 
-        #except Exception as e:
+        # except Exception as e:
         #    print(f"Error generating MTX strategy data: {e}")
+
 
 def validate_and_convert_date(date_str: str) -> str:
     """
@@ -679,18 +683,20 @@ def validate_and_convert_date(date_str: str) -> str:
     """
     try:
         # Parse the input date string
-        date_obj = datetime.strptime(date_str, '%Y%m%d')
+        date_obj = datetime.strptime(date_str, "%Y%m%d")
         # Convert to required format
-        return date_obj.strftime('%Y/%m/%d')
+        return date_obj.strftime("%Y/%m/%d")
     except ValueError as e:
         raise ValueError(f"Invalid date format. Please use YYYYMMDD format (e.g., 20240328). Error: {str(e)}")
 
+
 def parse_args():
     """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description='TAIFEX Data Parser Tool')
-    parser.add_argument('-d', '--date', help='Target date in YYYYMMDD format (default: today)', type=str)
-    parser.add_argument('-i', '--item', help='Data type to fetch (Fut, OP, or SPOT)', type=str, required=False)
+    parser = argparse.ArgumentParser(description="TAIFEX Data Parser Tool")
+    parser.add_argument("-d", "--date", help="Target date in YYYYMMDD format (default: today)", type=str)
+    parser.add_argument("-i", "--item", help="Data type to fetch (Fut, OP, or SPOT)", type=str, required=False)
     return parser.parse_args()
+
 
 def main():
     """Main function to run the data parser"""
@@ -702,7 +708,7 @@ def main():
     # Set target date if provided
     target_date = None
     try:
-        target_date = validate_and_convert_date(args.date) if args.date else date.today().strftime('%Y/%m/%d')
+        target_date = validate_and_convert_date(args.date) if args.date else date.today().strftime("%Y/%m/%d")
     except ValueError as e:
         print(f"Error: {str(e)}")
         sys.exit(1)
@@ -724,27 +730,28 @@ def main():
     # sys.exit(0)
 
     # Daily tasks - fetch current day's data
-    #today_str = date.today().strftime('%Y/%m/%d')
+    # today_str = date.today().strftime('%Y/%m/%d')
     # Use specific date for testing if needed
-    #today_str = date(2025, 5, 2).strftime('%Y/%m/%d')
+    # today_str = date(2025, 5, 2).strftime('%Y/%m/%d')
 
     # Fetch futures data
-    parser.fetch_data_from_web(item='Fut', target_date=target_date)
+    parser.fetch_data_from_web(item="Fut", target_date=target_date)
 
     # Fetch options data
-    parser.fetch_data_from_web(item='OP', target_date=target_date)
+    parser.fetch_data_from_web(item="OP", target_date=target_date)
 
     # Fetch spot market data
-    parser.fetch_data_from_web(item='SPOT', target_date=target_date)
+    parser.fetch_data_from_web(item="SPOT", target_date=target_date)
 
     # Run trading strategy calculations
     parser.run_trading_strategy()
 
     # Run strategy if needed
-    #if args.item in ('Fut', 'OP'):
+    # if args.item in ('Fut', 'OP'):
     #    parser.run_trading_strategy(target_date)
 
     print("Data processing completed successfully")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
