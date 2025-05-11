@@ -17,6 +17,10 @@ Usage:
     python mining_rpt.py -e TX 300 -d 20230101-20230131 # Export TX data with 300-min intervals
     python mining_rpt.py --upload-recover # Force redownload and reupload
 
+Requirement:
+    sudo pip3 install --no-cache-dir numpy PyDrive selenium
+    sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/*
+
 Author: Optimized version by Luke Tseng with help from Claude 3.7 Sonnet.
 """
 
