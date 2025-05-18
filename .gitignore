@@ -1,0 +1,45 @@
+# Database files
+*.db
+FCT_DB.db
+II_DB.db
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Private credentials
+devices/client_secrets.json
+devices/mycreds.txt
+
+# Report folders (if version control not needed)
+fut_rpt/
+opt_rpt/
+
+# Other common ignore items
+.DS_Store
+.env
+.venv
+venv/
+ENV/
+.idea/
+.vscode/
+*.swp
+*.swo
