@@ -148,10 +148,14 @@ class TaifexReportMiner:
         url = f"{self.report_info['url']}/{self.report_info['filename']}"
         LOGGER.info(f"Downloading {dest_path} from {url}")
 
+        tmp_dir = dest_path.parent
+        tmp_file = tmp_dir / Path(url).name  # like "report.csv"
         try:
             # Use subprocess instead of os.system for better error handling
             result = subprocess.run(
-                ["wget", "-O", str(dest_path), url],
+                # ["wget", "-O", str(dest_path), url],
+                ["wget", "-N", url],
+                cwd=tmp_dir,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -162,6 +166,10 @@ class TaifexReportMiner:
             if dest_path.exists():
                 dest_path.unlink()  # Remove failed download
             raise RuntimeError(f"Failed to download report: {e}")
+
+        # Rename if needed
+        if tmp_file != dest_path:
+            tmp_file.rename(dest_path)
 
         # Verify downloaded ZIP file
         self._verify_zip_file(dest_path)

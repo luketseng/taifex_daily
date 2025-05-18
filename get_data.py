@@ -15,6 +15,7 @@ Author: Optimized from original by Luke Tseng
 
 import sys
 import os
+import shutil
 import re
 import sqlite3
 import json
@@ -32,6 +33,7 @@ from selenium.webdriver import ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
 
 # Constants
 DB_NAME = "II_DB.db"
@@ -141,6 +143,19 @@ class TaifexDataParser:
         except Exception as e:
             print(f"Error importing data from CSV: {e}")
 
+    def find_chromedriver(self):
+        path = shutil.which("chromedriver")
+        if path:
+            return path
+
+        # fallback common path
+        fallback_paths = ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver", "/opt/chromedriver/chromedriver"]
+        for p in fallback_paths:
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return p
+
+        raise RuntimeError("chromedriver not found in PATH or fallback locations.")
+
     def fetch_data_from_web(self, item: str, target_date: str = None) -> None:
         """
         Fetch data from TAIFEX website
@@ -153,17 +168,24 @@ class TaifexDataParser:
         if target_date:
             self.date = target_date
 
-        print(f"Fetching {item} data for {self.date}")
+        # Automatically find chromedriver in PATH
+        chromedriver_path = self.find_chromedriver()
+
+        if not chromedriver_path:
+            raise RuntimeError("chromedriver not found in PATH. Please install it or add it to PATH.")
 
         # Setup Chrome options
         options = ChromeOptions()
         options.add_argument("--headless")
-        options.add_argument("--disable-features=VizDisplayCompositor")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-features=VizDisplayCompositor")
+
+        service = Service(executable_path=chromedriver_path)
 
         try:
-            with Chrome(options=options) as driver:
+            with Chrome(service=service, options=options) as driver:
                 self.lines_data = []
 
                 if item == "SPOT":
