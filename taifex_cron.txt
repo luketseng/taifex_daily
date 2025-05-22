@@ -22,7 +22,7 @@
 # m h  dom mon dow   command
 # @reboot cd ~/git/docker_mgmt && docker compose up -d;
 05 15,19 * * * ~/git/taifex_daily/mining_rpt.py --upload-recover > ~/git/taifex_daily/log.txt 2>&1
-00 17 * * 1-5 cd ~/git/taifex_web/web_json && ~/git/taifex_daily/get_data.py >> ~/git/taifex_daily/log2.txt 2>&1
+00 17 * * 1-5 cd ~/git/taifex_web/web_json && ~/git/taifex_daily/get_data.py > ~/git/taifex_daily/log2.txt 2>&1
 30 15,20 * * 1-4 ~/git/taifex_daily/fex_daily.sh
 30 15,20 * * 5 ~/git/taifex_daily/fex_daily.sh 4
 

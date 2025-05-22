@@ -41,7 +41,7 @@ from pathlib import Path
 import subprocess
 
 # Import Google Drive utility
-from devices.gdrive import gdrive
+from devices.gdrive2 import gdrive
 
 # Set up module-level constants
 DEFAULT_DB_NAME = "FCT_DB.db"

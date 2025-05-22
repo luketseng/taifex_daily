@@ -2,15 +2,8 @@
 # -*- coding: utf-8 -*-
 import sys, os
 import logging
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-
-"""
-Homepage: https://pypi.python.org/pypi/PyDrive
-Documentation: Official documentation on GitHub pages
-Github: https://github.com/googledrive/PyDrive
-Quickstart: https://pythonhosted.org/PyDrive/quickstart.html
-"""
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
 
 
 def get_logging_moduel():
@@ -54,14 +47,15 @@ class gdrive:
         for key, obj in self.item_obj.items():
             if not obj:
                 obj_req = self.getObjByName(key)
-                if obj_req != None and len(obj_req) < 2:
+                if obj_req is not None and len(obj_req) < 2:
                     self.item_obj[key] = obj_req[0]
                 else:
                     assert False, "obj_req not found or item not only in gdrive"
             logger.info("id of '{}' dir: {}".format(self.item_obj[key]["title"], self.item_obj[key]["id"]))
 
     def getObjByName(self, name):
-        ## get obj id by file name
+        ## get obj id by file name (API v3: name)
+        # query = "name='{}' and trashed=false".format(name)
         query = "title='{}' and trashed=false".format(name)
         query_list = self.drive.ListFile({"q": query}).GetList()
         if len(query_list) > 0:
@@ -92,7 +86,7 @@ class gdrive:
             # delete file if file exist in gdrive
             fname = os.path.basename(path)
             obj = self.getObjByName(fname)
-            if obj != None and recover:
+            if obj is not None and recover:
                 for i in range(len(obj)):
                     logger.info("file({}) exist in gdrive: id={}".format(obj[i]["title"], obj[i]["id"]))
                     obj[i].Delete()
