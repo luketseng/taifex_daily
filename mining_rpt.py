@@ -24,29 +24,29 @@ Requirement:
 Author: Optimized version by Luke Tseng with help from Claude 3.7 Sonnet.
 """
 
+# === Standard Library ===
 import sys
 import os
 import zipfile
 import argparse
-
-# import re
+import subprocess
 import sqlite3
-import logging
 import json
-import numpy as np
 import time
 from datetime import datetime, timedelta
 from typing import Tuple, List, Dict, Any, Optional
 from pathlib import Path
-import subprocess
 
-# Import Google Drive utility
+# === Third-Party Libraries ===
+import numpy as np
+
+# Import Local Module: log_util and Google Drive utility
+from lib.log_util import LoggerUtil
 from devices.gdrive2 import gdrive
 
 # Set up module-level constants
 DEFAULT_DB_NAME = "FCT_DB.db"
 ITEMS = ("fut_rpt", "opt_rpt")
-LOGGER = None  # Will be initialized later
 
 
 class TaifexReportMiner:
@@ -174,6 +174,40 @@ class TaifexReportMiner:
         # Verify downloaded ZIP file
         self._verify_zip_file(dest_path)
         return dest_path
+
+    def _validate_date_range(self, date_text: str, today: datetime = None) -> Tuple[datetime, datetime]:
+        """
+        Validate and parse date range from string format
+
+        Args:
+            date_text: Date range in format YYYYMMDD or YYYYMMDD-YYYYMMDD
+            today: Current date reference (for testing)
+
+        Returns:
+            Tuple of (start_date, end_date) as datetime objects
+        """
+        if today is None:
+            today = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
+
+        date_parts = date_text.split("-")
+
+        try:
+            start_date = datetime.strptime(date_parts[0], "%Y%m%d")
+            # Set end date to today if not provided
+            end_date = today
+            if len(date_parts) == 2:
+                end_date = datetime.strptime(date_parts[1], "%Y%m%d")
+        except ValueError:
+            LOGGER.error(f"Invalid date format: '{date_text}'. Expected format: YYYYMMDD or YYYYMMDD-YYYYMMDD")
+            raise ValueError(f"Invalid date format: '{date_text}'")
+
+        # Validate date range
+        if start_date > end_date or start_date > today:
+            LOGGER.error(f"Invalid date range: start date {start_date} is after end date {end_date} or today {today}")
+            raise ValueError(f"Invalid date range: {start_date} to {end_date}")
+
+        LOGGER.info(f"Date range: {start_date} to {end_date}")
+        return start_date, end_date
 
     def _verify_zip_file(self, file_path: Path) -> bool:
         """
@@ -653,7 +687,7 @@ class TaifexReportMiner:
                 end_date = today
                 LOGGER.warning("No date range provided, using today's date")
             else:
-                date_range = validate_date_range(args.date)
+                date_range = self._validate_date_range(args.date)
                 start_date = date_range[0]
                 end_date = date_range[1]
 
@@ -863,66 +897,6 @@ class TaifexReportMiner:
 
 
 # Utility functions
-def setup_logging(level=logging.INFO) -> logging.Logger:
-    """
-    Setup and configure logging
-
-    Args:
-        level: Logging level
-
-    Returns:
-        Logger: Configured logger
-    """
-    global LOGGER
-    LOGGER = logging.getLogger(__name__)
-    LOGGER.setLevel(level)
-
-    # Avoid adding handlers multiple times
-    if not LOGGER.handlers:
-        console = logging.StreamHandler(sys.stdout)
-        console.setLevel(level)
-        formatter = logging.Formatter("%(asctime)s | %(name)s - %(levelname)s - %(message)s")
-        console.setFormatter(formatter)
-        LOGGER.addHandler(console)
-
-    return LOGGER
-
-
-def validate_date_range(date_text: str, today: datetime = None) -> Tuple[datetime, datetime]:
-    """
-    Validate and parse date range from string format
-
-    Args:
-        date_text: Date range in format YYYYMMDD or YYYYMMDD-YYYYMMDD
-        today: Current date reference (for testing)
-
-    Returns:
-        Tuple of (start_date, end_date) as datetime objects
-    """
-    if today is None:
-        today = datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
-
-    date_parts = date_text.split("-")
-
-    try:
-        start_date = datetime.strptime(date_parts[0], "%Y%m%d")
-        # Set end date to today if not provided
-        end_date = today
-        if len(date_parts) == 2:
-            end_date = datetime.strptime(date_parts[1], "%Y%m%d")
-    except ValueError:
-        LOGGER.error(f"Invalid date format: '{date_text}'. Expected format: YYYYMMDD or YYYYMMDD-YYYYMMDD")
-        raise ValueError(f"Invalid date format: '{date_text}'")
-
-    # Validate date range
-    if start_date > end_date or start_date > today:
-        LOGGER.error(f"Invalid date range: start date {start_date} is after end date {end_date} or today {today}")
-        raise ValueError(f"Invalid date range: {start_date} to {end_date}")
-
-    LOGGER.info(f"Date range: {start_date} to {end_date}")
-    return start_date, end_date
-
-
 def parse_arguments():
     """
     Parse command line arguments
@@ -976,14 +950,18 @@ def main():
     # Parse command-line arguments
     args = parse_arguments()
 
-    # Setup logging
-    setup_logging(getattr(logging, args.log_level))
+    # Initialize logger utility (can use a module name for finer control)
+    global LOGGER  # Will be initialized later
+    log_util = LoggerUtil(name="mining_rpt", level=args.log_level)  # 20 = logging.INFO
+    LOGGER = log_util.get_logger()
 
     # Make args accessible globally
     globals()["args"] = args
 
+    # Init TaifexReportMiner()
+
     # Validate date range
-    start_date, end_date = validate_date_range(args.date)
+    start_date, end_date = TaifexReportMiner()._validate_date_range(args.date)
     LOGGER.info(f"Arguments: {args}")
 
     # Handle export operation if requested

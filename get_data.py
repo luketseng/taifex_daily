@@ -13,6 +13,7 @@ It supports:
 Author: Optimized from original by Luke Tseng
 """
 
+# === Standard Library ===
 import sys
 import os
 import shutil
@@ -20,20 +21,25 @@ import re
 import sqlite3
 import json
 import time
-import chardet
-import numpy as np
 import argparse
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Any, Optional, Union
 from pathlib import Path
 
-# Web scraping modules
+# === Third-Party Libraries ===
+import chardet
+import numpy as np
+
+# === Web Scraping Modules (Third-Party: Selenium) ===
 from selenium.webdriver import Chrome
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+
+# === Import Local Module: log_util ===
+from lib.log_util import LoggerUtil
 
 # Constants
 DB_NAME = "II_DB.db"
@@ -136,12 +142,12 @@ class TaifexDataParser:
                     sql = f"INSERT INTO II_{item} VALUES {','.join(lines_to_insert)};"
                     cursor.execute(sql)
                     conn.commit()
-                    print(f"Successfully imported {len(lines_to_insert)} rows of {item} data")
+                    LOGGER.info(f"Successfully imported {len(lines_to_insert)} rows of {item} data")
                 else:
-                    print(f"No valid data found in {csv_path}")
+                    LOGGER.info(f"No valid data found in {csv_path}")
 
         except Exception as e:
-            print(f"Error importing data from CSV: {e}")
+            LOGGER.error(f"Error importing data from CSV: {e}")
 
     def find_chromedriver(self):
         path = shutil.which("chromedriver")
@@ -193,7 +199,7 @@ class TaifexDataParser:
                 elif item in ("Fut", "OP"):
                     self._fetch_futures_options_data(driver, item)
                 else:
-                    print(f"Unknown item type: {item}")
+                    LOGGER.warning(f"Unknown item type: {item}")
                     return
 
                 # Process and store data
@@ -201,12 +207,12 @@ class TaifexDataParser:
                     insert_data = self._prepare_data_for_db(item)
                     if insert_data:
                         self._store_data_in_db(*insert_data)
-                        print(f"Successfully stored {item} data for {self.date}")
+                        LOGGER.info(f"Successfully stored {item} data for {self.date}")
                 else:
-                    print(f"No data retrieved for {item} on {self.date}")
+                    LOGGER.warning(f"No data retrieved for {item} on {self.date}")
 
         except Exception as e:
-            print(f"Error fetching data from web: {e}")
+            LOGGER.error(f"Error fetching data from web: {e}")
 
     def _fetch_spot_data(self, driver) -> None:
         """
@@ -228,11 +234,11 @@ class TaifexDataParser:
             rows = driver.find_elements(By.TAG_NAME, "tr")
             for row in rows:
                 row_list = row.text.split()
-                print(row_list)
+                LOGGER.debug(row_list)
                 self.lines_data.append(row_list)
 
         except Exception as e:
-            print(f"Error fetching spot data: {e}")
+            LOGGER.error(f"Error fetching spot data: {e}")
 
     def _fetch_futures_options_data(self, driver, item: str) -> None:
         """
@@ -255,13 +261,13 @@ class TaifexDataParser:
             date_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "queryDate")))
 
             current_date = date_field.get_attribute("value")
-            print(f"Default date on website: {current_date}")
+            LOGGER.info(f"Default date on website: {current_date}")
 
             # Use provided date or keep current date
             target_date = self.date if self.date else current_date
             date_field.clear()
             date_field.send_keys(target_date)
-            print(f"Setting date to: {target_date}")
+            LOGGER.info(f"Setting date to: {target_date}")
 
             # Click the search button
             search_button = driver.find_element(By.ID, "button")
@@ -274,7 +280,7 @@ class TaifexDataParser:
             self._parse_table_data(driver, item)
 
         except Exception as e:
-            print(f"Error fetching {item} data: {e}")
+            LOGGER.error(f"Error fetching {item} data: {e}")
 
     def _parse_table_data(self, driver, item: str) -> None:
         """
@@ -290,13 +296,13 @@ class TaifexDataParser:
                 date_element = driver.find_element(By.XPATH, '//*[@id="printhere"]/div[4]/p[1]')
                 date_span = date_element.find_element(By.CLASS_NAME, "right")
                 date_text = date_span.get_attribute("textContent")[2:]
-                print(f"Data date from website: {date_text}")
+                LOGGER.info(f"Data date from website: {date_text}")
 
                 # Initialize data list with the date
                 self.lines_data = [f"{date_text}"]
             except Exception as e:
-                print(f"Could not find date information: {e}")
-                print("Exiting as no valid data found")
+                LOGGER.error(f"Could not find date information: {e}")
+                LOGGER.error("Exiting as no valid data found")
                 sys.exit(1)
 
             # Find and parse the content table
@@ -326,10 +332,10 @@ class TaifexDataParser:
                 self.lines_data.append(row_data)
 
             # Debug output
-            print(json.dumps(self.lines_data, indent=4, ensure_ascii=False))
+            LOGGER.debug(json.dumps(self.lines_data, indent=4, ensure_ascii=False))
 
         except Exception as e:
-            print(f"Error parsing table data: {e}")
+            LOGGER.error(f"Error parsing table data: {e}")
 
     def _prepare_data_for_db(self, item: str) -> Tuple[str, str]:
         """
@@ -342,7 +348,7 @@ class TaifexDataParser:
             Tuple containing (date, SQL value strings)
         """
         if not self.lines_data:
-            print("No data to prepare for database")
+            LOGGER.warning("No data to prepare for database")
             return None
 
         values_list = []
@@ -351,7 +357,7 @@ class TaifexDataParser:
         if item in ("Fut", "OP"):
             # Check if we have the date in the data
             if self.date not in self.lines_data[0]:
-                print(f"Warning: Expected date {self.date} not found in data: {self.lines_data[0]}")
+                LOGGER.warning(f"Expected date {self.date} not found in data: {self.lines_data[0]}")
                 return None
 
             date_str = self.lines_data[0]
@@ -368,7 +374,7 @@ class TaifexDataParser:
                 if len(row) == 15:  # Futures data format
                     symbol = self.SYMBOL_MAP.get(row[1])
                     if not symbol:
-                        print(f"Unsupported symbol: {row[1]}")
+                        LOGGER.warning(f"Unsupported symbol: {row[1]}")
                         continue
                     ii_type = self.SYMBOL_MAP[row[2]]
                 elif len(row) == 13:  # Partial futures data format
@@ -376,7 +382,7 @@ class TaifexDataParser:
                 elif len(row) == 16:  # Options data format with symbol and put/call
                     symbol = self.SYMBOL_MAP.get(row[1])
                     if not symbol:
-                        print(f"Unsupported symbol: {row[1]}")
+                        LOGGER.warning(f"Unsupported symbol: {row[1]}")
                         continue
                     pc_type = self.SYMBOL_MAP.get(row[2])
                     ii_type = self.SYMBOL_MAP[row[3]]
@@ -412,7 +418,7 @@ class TaifexDataParser:
 
                         # Verify date matches requested date
                         if self.date not in date_str:
-                            print(f"Warning: Expected date {self.date} does not match data date {date_str}")
+                            LOGGER.warning(f"Warning: Expected date {self.date} does not match data date {date_str}")
                             return None
                 else:
                     # Process market data row
@@ -454,12 +460,33 @@ class TaifexDataParser:
                 cursor.execute(insert_sql)
                 conn.commit()
 
-                print(f"Successfully stored data for {date_str} in table {table_name}")
+                LOGGER.info(f"Successfully stored data for {date_str} in table {table_name}")
 
         except sqlite3.Error as e:
-            print(f"Database error: {e}")
+            LOGGER.error(f"Database error: {e}")
         except Exception as e:
-            print(f"Error storing data: {e}")
+            LOGGER.error(f"Error storing data: {e}")
+
+    def _validate_and_convert_date(self, date_str: str) -> str:
+        """
+        Validate and convert date string from YYYYMMDD to YYYY/MM/DD format
+
+        Args:
+            date_str: Date string in YYYYMMDD format
+
+        Returns:
+            str: Date string in YYYY/MM/DD format
+
+        Raises:
+            ValueError: If date format is invalid
+        """
+        try:
+            # Parse the input date string
+            date_obj = datetime.strptime(date_str, "%Y%m%d")
+            # Convert to required format
+            return date_obj.strftime("%Y/%m/%d")
+        except ValueError as e:
+            raise ValueError(f"Invalid date format. Please use YYYYMMDD format (e.g., 20240328). Error: {str(e)}")
 
     def execute_query(self, db_path: str, query: str) -> List[Tuple]:
         """
@@ -478,7 +505,7 @@ class TaifexDataParser:
                 cursor.execute(query)
                 return cursor.fetchall()
         except sqlite3.Error as e:
-            print(f"Database query error: {e}")
+            LOGGER.error(f"Database query error: {e}")
             return []
 
     def run_trading_strategy(self, target_date: str = None) -> None:
@@ -491,7 +518,7 @@ class TaifexDataParser:
         date_str = target_date if target_date else self.date
         start_date_str = datetime.strptime(DEFAULT_START_DATE, "%Y/%m/%d").strftime("%Y/%m/%d")
 
-        print(f"Calculating trading strategy from {start_date_str} to {date_str}")
+        LOGGER.info(f"Calculating trading strategy from {start_date_str} to {date_str}")
 
         # Database paths
         market_db_path = self.base_path / MARKET_DATA_DB
@@ -588,13 +615,13 @@ class TaifexDataParser:
             with open("data.json", "w") as f:
                 json.dump(output_data, f, indent=4)
 
-            print(f"Strategy data exported to data.json with {len(output_data)} entries")
+            LOGGER.info(f"Strategy data exported to data.json with {len(output_data)} entries")
 
             # Generate MTX strategy data
             self._generate_mtx_strategy(ii_db_path, start_date_str)
 
         except Exception as e:
-            print(f"Error generating strategy data: {e}")
+            LOGGER.error(f"Error generating strategy data: {e}")
 
     def _generate_mtx_strategy(self, db_path: str, start_date_str: str) -> None:
         """
@@ -684,32 +711,10 @@ class TaifexDataParser:
             with open("data_MTX.json", "w") as f:
                 json.dump(output_data, f, indent=4)
 
-            print(f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries")
+            LOGGER.info(f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries")
 
         # except Exception as e:
         #    print(f"Error generating MTX strategy data: {e}")
-
-
-def validate_and_convert_date(date_str: str) -> str:
-    """
-    Validate and convert date string from YYYYMMDD to YYYY/MM/DD format
-
-    Args:
-        date_str: Date string in YYYYMMDD format
-
-    Returns:
-        str: Date string in YYYY/MM/DD format
-
-    Raises:
-        ValueError: If date format is invalid
-    """
-    try:
-        # Parse the input date string
-        date_obj = datetime.strptime(date_str, "%Y%m%d")
-        # Convert to required format
-        return date_obj.strftime("%Y/%m/%d")
-    except ValueError as e:
-        raise ValueError(f"Invalid date format. Please use YYYYMMDD format (e.g., 20240328). Error: {str(e)}")
 
 
 def parse_args():
@@ -717,6 +722,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="TAIFEX Data Parser Tool")
     parser.add_argument("-d", "--date", help="Target date in YYYYMMDD format (default: today)", type=str)
     parser.add_argument("-i", "--item", help="Data type to fetch (Fut, OP, or SPOT)", type=str, required=False)
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Set logging level",
+    )
     return parser.parse_args()
 
 
@@ -727,12 +738,17 @@ def main():
     # Initialize parser
     parser = TaifexDataParser()
 
+    # Initialize logger utility (can use a module name for finer control)
+    global LOGGER  # Will be initialized later
+    log_util = LoggerUtil(name="get_data", level=args.log_level)  # 20 = logging.INFO
+    LOGGER = log_util.get_logger()
+
     # Set target date if provided
     target_date = None
     try:
-        target_date = validate_and_convert_date(args.date) if args.date else date.today().strftime("%Y/%m/%d")
+        target_date = parser._validate_and_convert_date(args.date) if args.date else date.today().strftime("%Y/%m/%d")
     except ValueError as e:
-        print(f"Error: {str(e)}")
+        LOGGER.error(f"Error: {str(e)}")
         sys.exit(1)
 
     # Uncomment these sections as needed
@@ -772,7 +788,7 @@ def main():
     # if args.item in ('Fut', 'OP'):
     #    parser.run_trading_strategy(target_date)
 
-    print("Data processing completed successfully")
+    LOGGER.info("Data processing completed successfully")
 
 
 if __name__ == "__main__":
