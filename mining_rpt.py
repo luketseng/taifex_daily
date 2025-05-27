@@ -27,7 +27,6 @@ Author: Optimized version by Luke Tseng with help from Claude 3.7 Sonnet.
 # === Standard Library ===
 import sys
 import os
-import zipfile
 import argparse
 import subprocess
 import sqlite3
@@ -42,6 +41,7 @@ import numpy as np
 
 # Import Local Module: log_util and Google Drive utility
 from lib.log_util import LoggerUtil
+from lib.report_downloader import ReportDownloader
 from devices.gdrive2 import gdrive
 
 # Set up module-level constants
@@ -83,6 +83,9 @@ class TaifexReportMiner:
 
         # Initialize Google Drive client if needed
         self._init_gdrive()
+
+        # Initialize downloader
+        self.downloader = ReportDownloader(self.report_info)
 
         LOGGER.info(f"Mining initialized: date='{self.date}', item='{self.item}'")
 
@@ -132,48 +135,7 @@ class TaifexReportMiner:
         Returns:
             Path to downloaded file
         """
-        # Create report directory if not exists
-        report_dir = Path(self.report_info["rptdirpath"])
-        report_dir.mkdir(exist_ok=True)
-
-        # Destination file path
-        dest_path = report_dir / self.report_info["filename"]
-
-        # Skip download if file exists and not in recover mode
-        if not recover and dest_path.exists():
-            LOGGER.info(f"File already exists: {dest_path}")
-            return dest_path
-
-        # Download the file
-        url = f"{self.report_info['url']}/{self.report_info['filename']}"
-        LOGGER.info(f"Downloading {dest_path} from {url}")
-
-        tmp_dir = dest_path.parent
-        tmp_file = tmp_dir / Path(url).name  # like "report.csv"
-        try:
-            # Use subprocess instead of os.system for better error handling
-            result = subprocess.run(
-                # ["wget", "-O", str(dest_path), url],
-                ["wget", "-N", url],
-                cwd=tmp_dir,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            LOGGER.debug(f"wget output: {result.stdout}")
-        except subprocess.CalledProcessError as e:
-            LOGGER.error(f"Download failed: {e.stderr}")
-            if dest_path.exists():
-                dest_path.unlink()  # Remove failed download
-            raise RuntimeError(f"Failed to download report: {e}")
-
-        # Rename if needed
-        if tmp_file != dest_path:
-            tmp_file.rename(dest_path)
-
-        # Verify downloaded ZIP file
-        self._verify_zip_file(dest_path)
-        return dest_path
+        return self.downloader.download_report(recover=recover)
 
     def _validate_date_range(self, date_text: str, today: datetime = None) -> Tuple[datetime, datetime]:
         """
@@ -209,27 +171,6 @@ class TaifexReportMiner:
         LOGGER.info(f"Date range: {start_date} to {end_date}")
         return start_date, end_date
 
-    def _verify_zip_file(self, file_path: Path) -> bool:
-        """
-        Verify that a ZIP file is valid
-
-        Args:
-            file_path: Path to ZIP file
-
-        Returns:
-            True if file is valid, raises exception otherwise
-        """
-        try:
-            with zipfile.ZipFile(file_path, "r") as zip_file:
-                zip_file.testzip()
-            LOGGER.info(f"Successfully verified ZIP file: {file_path}")
-            return True
-        except zipfile.BadZipFile:
-            LOGGER.warning(f"Invalid ZIP file: {file_path}")
-            if file_path.exists():
-                file_path.unlink()
-            raise ValueError(f"Downloaded file is not a valid ZIP: {file_path}")
-
     def extract_report(
         self,
         zip_path: Optional[Path] = None,
@@ -245,33 +186,7 @@ class TaifexReportMiner:
         Returns:
             Path to directory containing extracted files
         """
-        # Use provided zip_path or construct from report info
-        if zip_path is None:
-            zip_path = Path(self.report_info["rptdirpath"]) / self.report_info["filename"]
-
-        # Default extract directory is tmp subdirectory of report directory
-        if extract_dir is None:
-            extract_dir = Path(self.report_info["rptdirpath"]) / "tmp"
-
-        # Create extract directory if not exists
-        extract_dir.mkdir(exist_ok=True)
-
-        # Check if zip file exists
-        if not zip_path.exists():
-            LOGGER.error(f"ZIP file not found: {zip_path}")
-            raise FileNotFoundError(f"ZIP file not found: {zip_path}")
-
-        # Extract files
-        try:
-            with zipfile.ZipFile(zip_path, "r") as zip_file:
-                zip_file.extractall(extract_dir)
-                extracted_files = zip_file.namelist()
-
-            LOGGER.info(f"Extracted {len(extracted_files)} files from {zip_path} to {extract_dir}")
-            return extract_dir
-        except Exception as e:
-            LOGGER.error(f"Failed to extract ZIP file: {e}")
-            raise RuntimeError(f"Failed to extract ZIP file: {e}")
+        return self.downloader.extract_report(zip_path=zip_path, extract_dir=extract_dir)
 
     def extract_all_reports(self) -> Path:
         """
@@ -280,32 +195,7 @@ class TaifexReportMiner:
         Returns:
             Path to the extraction directory
         """
-        LOGGER.info(f"Extracting all reports in {self.report_info['rptdirpath']}")
-
-        report_dir = Path(self.report_info["rptdirpath"])
-        extract_dir = report_dir / "tmp"
-        extract_dir.mkdir(exist_ok=True)
-
-        if not report_dir.is_dir():
-            LOGGER.warning(f"Report directory not found: {report_dir}")
-            return extract_dir
-
-        # Process each ZIP file in the directory
-        zip_count = 0
-        for file_path in report_dir.glob("*.zip"):
-            try:
-                self._verify_zip_file(file_path)
-                with zipfile.ZipFile(file_path, "r") as zip_file:
-                    for filename in zip_file.namelist():
-                        zip_file.extract(filename, extract_dir)
-                        LOGGER.debug(f"Extracted {filename} to {extract_dir}")
-                zip_count += 1
-            except (zipfile.BadZipFile, Exception) as e:
-                LOGGER.warning(f"Skipping {file_path}: {e}")
-                continue
-
-        LOGGER.info(f"Extracted {zip_count} ZIP files to {extract_dir}")
-        return extract_dir
+        return self.downloader.extract_all_reports()
 
     def upload_to_gdrive(self, recover: bool = False) -> bool:
         """

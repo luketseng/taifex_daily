@@ -1,9 +1,9 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import sys, os
-import logging
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
+from lib.log_util import LoggerUtil
 
 """
 Homepage: https://pypi.python.org/pypi/PyDrive
@@ -13,16 +13,16 @@ Quickstart: https://pythonhosted.org/PyDrive/quickstart.html
 """
 
 
-def get_logging_moduel():
-    global logger
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s | %(name)s - %(levelname)s - %(message)s")
-    console.setFormatter(formatter)
-    logger.addHandler(console)
+# def get_logging_moduel():
+#    global logger
+#    logger = logging.getLogger(__name__)
+#    logger.setLevel(logging.INFO)
+#
+#    console = logging.StreamHandler(sys.stdout)
+#    console.setLevel(logging.INFO)
+#    formatter = logging.Formatter("%(asctime)s | %(name)s - %(levelname)s - %(message)s")
+#    console.setFormatter(formatter)
+#    logger.addHandler(console)
 
 
 class gdrive:
@@ -32,7 +32,8 @@ class gdrive:
 
     def __init__(self):
         """init logging"""
-        get_logging_moduel()
+        # get_logging_moduel()
+        self.logger = LoggerUtil(name=__name__).get_logger()
 
         creds_file_path = os.path.join(self.path, "mycreds.txt")
         gauth = GoogleAuth()
@@ -58,7 +59,7 @@ class gdrive:
                     self.item_obj[key] = obj_req[0]
                 else:
                     assert False, "obj_req not found or item not only in gdrive"
-            logger.info("id of '{}' dir: {}".format(self.item_obj[key]["title"], self.item_obj[key]["id"]))
+            self.logger.info("id of '{}' dir: {}".format(self.item_obj[key]["title"], self.item_obj[key]["id"]))
 
     def getObjByName(self, name):
         ## get obj id by file name
@@ -66,10 +67,10 @@ class gdrive:
         query_list = self.drive.ListFile({"q": query}).GetList()
         if len(query_list) > 0:
             if len(query_list) > 1:
-                logger.warning("'{}' item not only in gdrive".format(name))
+                self.logger.warning("'{}' item not only in gdrive".format(name))
             return query_list
         else:
-            logger.warning("'{}' item not found item in gdrive".format(name))
+            self.logger.warning("'{}' item not found item in gdrive".format(name))
         return None
 
     def GetContentFile(self, name, path, _mimetype="application/zip"):
@@ -77,12 +78,12 @@ class gdrive:
         if obj_req != None and len(obj_req) < 2:
             # GetContentFile(): download file(filepath) from gdrive(target_id)
             file_obj = self.drive.CreateFile({"id": obj_req[0]["id"]})
-            logger.info("Downloading '{}' from gdrive".format(file_obj["title"]))
+            self.logger.info("Downloading '{}' from gdrive".format(file_obj["title"]))
             # Save Drive file as a local file
             file_obj.GetContentFile(path, mimetype=_mimetype)
-            logger.info("Finish to Download and save to '{}'".format(path))
+            self.logger.info("Finish to Download and save to '{}'".format(path))
         else:
-            logger.error("'{}' item not found or not only one in gdrive".format(name))
+            self.logger.error("'{}' item not found or not only one in gdrive".format(name))
             assert False, "'{}' item not found or not only one in gdrive".format(name)
 
     def UploadFile(self, path, name, _mimetype="application/zip", recover=True):
@@ -94,21 +95,21 @@ class gdrive:
             obj = self.getObjByName(fname)
             if obj != None and recover:
                 for i in range(len(obj)):
-                    logger.info("file({}) exist in gdrive: id={}".format(obj[i]["title"], obj[i]["id"]))
+                    self.logger.info("file({}) exist in gdrive: id={}".format(obj[i]["title"], obj[i]["id"]))
                     obj[i].Delete()
-                logger.info("Delete all file({}) in gdrive".format(fname))
+                self.logger.info("Delete all file({}) in gdrive".format(fname))
 
             # Create GoogleDriveFile instance
             file_obj = self.drive.CreateFile({"title": fname, "parents": [{"id": dst_obj["id"]}]})
             file_obj.SetContentFile(path)
             file_obj.Upload()
-            logger.info(
+            self.logger.info(
                 "upload local file({}) with mimeType {} to '{}' item of gdrive".format(
                     file_obj["title"], file_obj["mimeType"], dst_obj["title"]
                 )
             )
         else:
-            logger.error("Unexpected error:", sys.exc_info()[0])
+            self.logger.error("Unexpected error:", sys.exc_info()[0])
             assert False, "'{}' not found gdrive().item_obj".format(name)
 
 
