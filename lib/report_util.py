@@ -7,12 +7,12 @@ from typing import Optional
 from lib.log_util import LoggerUtil
 
 
-class ReportDownloader:
+class ReportUtil:
     """
     Handles downloading, verifying, and extracting report ZIP files.
     """
 
-    def __init__(self, report_info: dict):
+    def __init__(self, logger=None, report_info: dict = None):
         """
         Initialize with a logger and a report info dict.
 
@@ -20,7 +20,7 @@ class ReportDownloader:
             logger (logging.Logger): Logger instance for logging.
             report_info (dict): Dictionary containing report config (must contain 'filename', 'url', 'rptdirpath').
         """
-        self.logger = LoggerUtil(name=__name__).get_logger()
+        self.logger = logger or LoggerUtil(name=__name__).get_logger()
         self.report_info = report_info
 
     def download_report(self, recover: bool = False) -> Path:
