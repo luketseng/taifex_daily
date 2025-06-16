@@ -18,7 +18,6 @@ import sys
 import os
 import shutil
 import re
-import sqlite3
 import json
 import time
 import argparse
@@ -40,6 +39,8 @@ from selenium.webdriver.chrome.service import Service
 
 # === Import Local Module: log_util ===
 from lib.log_util import LoggerUtil
+from lib.export_utils import ExportUtils
+from lib.db_utils import DBUtils
 
 # Constants
 DB_NAME = "II_DB.db"
@@ -74,25 +75,24 @@ class TaifexDataParser:
         "自營商": "DEA",
     }
 
-    def __init__(self):
+    def __init__(self, logger=None):
         """Initialize the parser with default values"""
         self.lines_data = []
         self.date = date.today().strftime("%Y/%m/%d")
         self.item = None
         self.base_path = Path(os.path.dirname(__file__))
+        self.logger = logger or LoggerUtil(name=__name__).get_logger()
+        self.exporter = ExportUtils()
+        self.market_db_path = self.base_path / MARKET_DATA_DB
+        self.ii_db_path = self.base_path / DB_NAME
 
-    def get_db_connection(self, db_name: str = DB_NAME) -> sqlite3.Connection:
-        """
-        Create a database connection to the specified SQLite database
+    @property
+    def dbu_market(self):
+        return DBUtils(db_path=str(self.market_db_path))
 
-        Args:
-            db_name: Name of the database file
-
-        Returns:
-            SQLite connection object
-        """
-        db_path = self.base_path / db_name
-        return sqlite3.connect(db_path)
+    @property
+    def dbu_ii(self):
+        return DBUtils(db_path=str(self.ii_db_path))
 
     def import_data_from_csv(self, item: str) -> None:
         """
@@ -119,8 +119,7 @@ class TaifexDataParser:
                 content = content.replace(chinese, english)
 
             # Connect to database
-            with self.get_db_connection() as conn:
-                cursor = conn.cursor()
+            with self.dbu_ii.db_connect() as (conn, cursor):
 
                 # Process and insert data
                 lines_to_insert = []
@@ -134,7 +133,12 @@ class TaifexDataParser:
 
                     # Check if second field is a recognized symbol
                     if fields[1] in self.SYMBOL_MAP.values():
-                        title = repr(fields[:-12]).replace(" ", "").replace("[", "").replace("]", "")
+                        title = (
+                            repr(fields[:-12])
+                            .replace(" ", "")
+                            .replace("[", "")
+                            .replace("]", "")
+                        )
                         values = ",".join(fields[-12:])
                         lines_to_insert.append(f"({title},{values})")
 
@@ -142,12 +146,14 @@ class TaifexDataParser:
                     sql = f"INSERT INTO II_{item} VALUES {','.join(lines_to_insert)};"
                     cursor.execute(sql)
                     conn.commit()
-                    LOGGER.info(f"Successfully imported {len(lines_to_insert)} rows of {item} data")
+                    self.logger.info(
+                        f"Successfully imported {len(lines_to_insert)} rows of {item} data"
+                    )
                 else:
-                    LOGGER.info(f"No valid data found in {csv_path}")
+                    self.logger.info(f"No valid data found in {csv_path}")
 
         except Exception as e:
-            LOGGER.error(f"Error importing data from CSV: {e}")
+            self.logger.error(f"Error importing data from CSV: {e}")
 
     def find_chromedriver(self):
         path = shutil.which("chromedriver")
@@ -155,7 +161,11 @@ class TaifexDataParser:
             return path
 
         # fallback common path
-        fallback_paths = ["/usr/local/bin/chromedriver", "/usr/bin/chromedriver", "/opt/chromedriver/chromedriver"]
+        fallback_paths = [
+            "/usr/local/bin/chromedriver",
+            "/usr/bin/chromedriver",
+            "/opt/chromedriver/chromedriver",
+        ]
         for p in fallback_paths:
             if os.path.isfile(p) and os.access(p, os.X_OK):
                 return p
@@ -178,7 +188,9 @@ class TaifexDataParser:
         chromedriver_path = self.find_chromedriver()
 
         if not chromedriver_path:
-            raise RuntimeError("chromedriver not found in PATH. Please install it or add it to PATH.")
+            raise RuntimeError(
+                "chromedriver not found in PATH. Please install it or add it to PATH."
+            )
 
         # Setup Chrome options
         options = ChromeOptions()
@@ -199,7 +211,7 @@ class TaifexDataParser:
                 elif item in ("Fut", "OP"):
                     self._fetch_futures_options_data(driver, item)
                 else:
-                    LOGGER.warning(f"Unknown item type: {item}")
+                    self.logger.warning(f"Unknown item type: {item}")
                     return
 
                 # Process and store data
@@ -207,12 +219,14 @@ class TaifexDataParser:
                     insert_data = self._prepare_data_for_db(item)
                     if insert_data:
                         self._store_data_in_db(*insert_data)
-                        LOGGER.info(f"Successfully stored {item} data for {self.date}")
+                        self.logger.info(
+                            f"Successfully stored {item} data for {self.date}"
+                        )
                 else:
-                    LOGGER.warning(f"No data retrieved for {item} on {self.date}")
+                    self.logger.warning(f"No data retrieved for {item} on {self.date}")
 
         except Exception as e:
-            LOGGER.error(f"Error fetching data from web: {e}")
+            self.logger.error(f"Error fetching data from web: {e}")
 
     def _fetch_spot_data(self, driver) -> None:
         """
@@ -228,17 +242,19 @@ class TaifexDataParser:
         try:
             driver.get(url)
             # Wait for the table to load
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "tr")))
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "tr"))
+            )
 
             # Extract table rows
             rows = driver.find_elements(By.TAG_NAME, "tr")
             for row in rows:
                 row_list = row.text.split()
-                LOGGER.debug(row_list)
+                self.logger.debug(row_list)
                 self.lines_data.append(row_list)
 
         except Exception as e:
-            LOGGER.error(f"Error fetching spot data: {e}")
+            self.logger.error(f"Error fetching spot data: {e}")
 
     def _fetch_futures_options_data(self, driver, item: str) -> None:
         """
@@ -258,29 +274,33 @@ class TaifexDataParser:
             driver.get(url)
 
             # Set the query date
-            date_field = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "queryDate")))
+            date_field = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "queryDate"))
+            )
 
             current_date = date_field.get_attribute("value")
-            LOGGER.info(f"Default date on website: {current_date}")
+            self.logger.info(f"Default date on website: {current_date}")
 
             # Use provided date or keep current date
             target_date = self.date if self.date else current_date
             date_field.clear()
             date_field.send_keys(target_date)
-            LOGGER.info(f"Setting date to: {target_date}")
+            self.logger.info(f"Setting date to: {target_date}")
 
             # Click the search button
             search_button = driver.find_element(By.ID, "button")
             search_button.click()
 
             # Wait for results to load
-            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "printhere")))
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.ID, "printhere"))
+            )
 
             # Parse the data table
             self._parse_table_data(driver, item)
 
         except Exception as e:
-            LOGGER.error(f"Error fetching {item} data: {e}")
+            self.logger.error(f"Error fetching {item} data: {e}")
 
     def _parse_table_data(self, driver, item: str) -> None:
         """
@@ -293,20 +313,24 @@ class TaifexDataParser:
         try:
             # Find the date displayed in the results
             try:
-                date_element = driver.find_element(By.XPATH, '//*[@id="printhere"]/div[4]/p[1]')
+                date_element = driver.find_element(
+                    By.XPATH, '//*[@id="printhere"]/div[4]/p[1]'
+                )
                 date_span = date_element.find_element(By.CLASS_NAME, "right")
                 date_text = date_span.get_attribute("textContent")[2:]
-                LOGGER.info(f"Data date from website: {date_text}")
+                self.logger.info(f"Data date from website: {date_text}")
 
                 # Initialize data list with the date
                 self.lines_data = [f"{date_text}"]
             except Exception as e:
-                LOGGER.error(f"Could not find date information: {e}")
-                LOGGER.error("Exiting as no valid data found")
+                self.logger.error(f"Could not find date information: {e}")
+                self.logger.error("Exiting as no valid data found")
                 sys.exit(1)
 
             # Find and parse the content table
-            content_element = driver.find_element(By.XPATH, '//*[@id="printhere"]/div[4]/div[2]/table/tbody')
+            content_element = driver.find_element(
+                By.XPATH, '//*[@id="printhere"]/div[4]/div[2]/table/tbody'
+            )
             rows = content_element.find_elements(By.TAG_NAME, "tr")
 
             for row in rows:
@@ -332,10 +356,10 @@ class TaifexDataParser:
                 self.lines_data.append(row_data)
 
             # Debug output
-            LOGGER.debug(json.dumps(self.lines_data, indent=4, ensure_ascii=False))
+            self.logger.debug(json.dumps(self.lines_data, indent=4, ensure_ascii=False))
 
         except Exception as e:
-            LOGGER.error(f"Error parsing table data: {e}")
+            self.logger.error(f"Error parsing table data: {e}")
 
     def _prepare_data_for_db(self, item: str) -> Tuple[str, str]:
         """
@@ -348,7 +372,7 @@ class TaifexDataParser:
             Tuple containing (date, SQL value strings)
         """
         if not self.lines_data:
-            LOGGER.warning("No data to prepare for database")
+            self.logger.warning("No data to prepare for database")
             return None
 
         values_list = []
@@ -357,13 +381,17 @@ class TaifexDataParser:
         if item in ("Fut", "OP"):
             # Check if we have the date in the data
             if self.date not in self.lines_data[0]:
-                LOGGER.warning(f"Expected date {self.date} not found in data: {self.lines_data[0]}")
+                self.logger.warning(
+                    f"Expected date {self.date} not found in data: {self.lines_data[0]}"
+                )
                 return None
 
             date_str = self.lines_data[0]
 
             # Process data rows - different number of rows for futures vs options
-            data_range = self.lines_data[1:13] if item == "Fut" else self.lines_data[1:7]
+            data_range = (
+                self.lines_data[1:13] if item == "Fut" else self.lines_data[1:7]
+            )
 
             symbol = ""
             ii_type = ""
@@ -374,7 +402,7 @@ class TaifexDataParser:
                 if len(row) == 15:  # Futures data format
                     symbol = self.SYMBOL_MAP.get(row[1])
                     if not symbol:
-                        LOGGER.warning(f"Unsupported symbol: {row[1]}")
+                        self.logger.warning(f"Unsupported symbol: {row[1]}")
                         continue
                     ii_type = self.SYMBOL_MAP[row[2]]
                 elif len(row) == 13:  # Partial futures data format
@@ -382,7 +410,7 @@ class TaifexDataParser:
                 elif len(row) == 16:  # Options data format with symbol and put/call
                     symbol = self.SYMBOL_MAP.get(row[1])
                     if not symbol:
-                        LOGGER.warning(f"Unsupported symbol: {row[1]}")
+                        self.logger.warning(f"Unsupported symbol: {row[1]}")
                         continue
                     pc_type = self.SYMBOL_MAP.get(row[2])
                     ii_type = self.SYMBOL_MAP[row[3]]
@@ -411,14 +439,18 @@ class TaifexDataParser:
                     # Parse the date
                     match = re.match(r"(\d+)年(\d+)月(\d+)日", row[0])
                     if match:
-                        year = int(match.group(1)) + 1911  # Convert from ROC to Gregorian
+                        year = (
+                            int(match.group(1)) + 1911
+                        )  # Convert from ROC to Gregorian
                         month = match.group(2)
                         day = match.group(3)
                         date_str = f"{year}/{month}/{day}"
 
                         # Verify date matches requested date
                         if self.date not in date_str:
-                            LOGGER.warning(f"Warning: Expected date {self.date} does not match data date {date_str}")
+                            self.logger.warning(
+                                f"Warning: Expected date {self.date} does not match data date {date_str}"
+                            )
                             return None
                 else:
                     # Process market data row
@@ -438,34 +470,39 @@ class TaifexDataParser:
 
     def _store_data_in_db(self, date_str: str, values_sql: str) -> None:
         """
-        Store the prepared data in the database
-
-        Args:
-            date_str: Date of the data
-            values_sql: SQL values string for insertion
+        Store the prepared data in the database using DBUtils
         """
-        db_path = self.base_path / DB_NAME
         table_name = f"II_{self.item}"
+        # Delete existing data for this date first
+        self.dbu_ii.db_delete(table_name, "Date=?", (date_str,))
+        # Parse values_sql to list of tuples (assume values_sql is like: (a,b,c),(d,e,f))
+        import re
 
-        try:
-            with sqlite3.connect(db_path) as conn:
-                cursor = conn.cursor()
-
-                # Delete existing data for this date first
-                delete_sql = f"DELETE FROM {table_name} WHERE Date='{date_str}';"
-                cursor.execute(delete_sql)
-
-                # Insert new data
-                insert_sql = f"INSERT INTO {table_name} VALUES {values_sql};"
-                cursor.execute(insert_sql)
-                conn.commit()
-
-                LOGGER.info(f"Successfully stored data for {date_str} in table {table_name}")
-
-        except sqlite3.Error as e:
-            LOGGER.error(f"Database error: {e}")
-        except Exception as e:
-            LOGGER.error(f"Error storing data: {e}")
+        values = []
+        for match in re.finditer(r"\((.*?)\)", values_sql):
+            row = match.group(1)
+            # Remove quotes and split by comma
+            row = [
+                eval(x) if x.strip().startswith("'") or x.strip().startswith('"') else x
+                for x in row.split(",")
+            ]
+            values.append(tuple(row))
+        # Get column count from first row
+        if not values:
+            self.logger.warning(f"No values to insert into {table_name}")
+            return
+        columns = [
+            f"col{i+1}" for i in range(len(values[0]))
+        ]  # Placeholder, ideally should match actual schema
+        # Try to get actual column names from DB
+        query = f"PRAGMA table_info({table_name});"
+        colinfo = self.dbu_ii.db_execute_query(query, fetch="all")
+        if colinfo:
+            columns = [col[1] for col in colinfo]
+        self.dbu_ii.db_store_generic(table_name, columns, values)
+        self.logger.info(
+            f"Successfully stored data for {date_str} in table {table_name}"
+        )
 
     def _validate_and_convert_date(self, date_str: str) -> str:
         """
@@ -486,27 +523,9 @@ class TaifexDataParser:
             # Convert to required format
             return date_obj.strftime("%Y/%m/%d")
         except ValueError as e:
-            raise ValueError(f"Invalid date format. Please use YYYYMMDD format (e.g., 20240328). Error: {str(e)}")
-
-    def execute_query(self, db_path: str, query: str) -> List[Tuple]:
-        """
-        Execute a database query and return results
-
-        Args:
-            db_path: Path to the database file
-            query: SQL query string
-
-        Returns:
-            List of result tuples
-        """
-        try:
-            with sqlite3.connect(db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(query)
-                return cursor.fetchall()
-        except sqlite3.Error as e:
-            LOGGER.error(f"Database query error: {e}")
-            return []
+            raise ValueError(
+                f"Invalid date format. Please use YYYYMMDD format (e.g., 20240328). Error: {str(e)}"
+            )
 
     def run_trading_strategy(self, target_date: str = None) -> None:
         """
@@ -516,13 +535,13 @@ class TaifexDataParser:
             target_date: Date to calculate strategy for (default: self.date)
         """
         date_str = target_date if target_date else self.date
-        start_date_str = datetime.strptime(DEFAULT_START_DATE, "%Y/%m/%d").strftime("%Y/%m/%d")
+        start_date_str = datetime.strptime(DEFAULT_START_DATE, "%Y/%m/%d").strftime(
+            "%Y/%m/%d"
+        )
 
-        LOGGER.info(f"Calculating trading strategy from {start_date_str} to {date_str}")
-
-        # Database paths
-        market_db_path = self.base_path / MARKET_DATA_DB
-        ii_db_path = self.base_path / DB_NAME
+        self.logger.info(
+            f"Calculating trading strategy from {start_date_str} to {date_str}"
+        )
 
         try:
             # Get market price data
@@ -532,7 +551,7 @@ class TaifexDataParser:
                 WHERE Date>="{start_date_str}" AND (Time="13:30:00" OR Time="13:45:00")
                 ORDER BY Date, Time;
             """
-            price_data = self.execute_query(str(market_db_path), query)
+            price_data = self.dbu_market.db_execute_query(query, fetch="all")
 
             # Create a dictionary to hold all strategy data
             data_table = {}
@@ -545,7 +564,7 @@ class TaifexDataParser:
                 FROM II_Fut
                 WHERE Date>='{start_date_str}' AND Fut='TX' AND Institutional='FOR';
             """
-            fut_data = self.execute_query(str(ii_db_path), query)
+            fut_data = self.dbu_ii.db_execute_query(query, fetch="all")
 
             # Calculate position changes and profit/loss
             prev_position = 0
@@ -555,8 +574,12 @@ class TaifexDataParser:
 
                 if i > 0:
                     position_change = position - prev_position
-                    contract_value = position_change * data_table[date_val][0] * 200  # Contract size = 200
-                    total_value_bn = round(contract_value / 100000000, 2)  # Convert to billions
+                    contract_value = (
+                        position_change * data_table[date_val][0] * 200
+                    )  # Contract size = 200
+                    total_value_bn = round(
+                        contract_value / 100000000, 2
+                    )  # Convert to billions
                 else:
                     position_change = None
                     total_value_bn = None
@@ -571,7 +594,7 @@ class TaifexDataParser:
                 WHERE Date>='{start_date_str}' AND Institutional LIKE 'FOR%'
                 GROUP BY Date;
             """
-            spot_data = self.execute_query(str(ii_db_path), query)
+            spot_data = self.dbu_ii.db_execute_query(query, fetch="all")
 
             for date_val, amount in spot_data:
                 if date_val in data_table:
@@ -580,25 +603,22 @@ class TaifexDataParser:
                     data_table[date_val].append(amount_bn)
 
             # Get options data
-            with sqlite3.connect(ii_db_path) as conn:
-                cursor = conn.cursor()
-                query = f"""
-                    SELECT Date, OI_B_Contract, OI_S_Contract, OI_B_Amount, OI_S_Amount
-                    FROM II_OP
-                    WHERE Institutional='FOR' AND Date>='{start_date_str}';
-                """
-                cursor.execute(query)
-
-                while True:
-                    rows = cursor.fetchmany(2)
-                    if not rows:
-                        break
-
-                    if len(rows) == 2 and rows[0][0] in data_table:
-                        # Calculate net options value (buy value + sell value)
-                        net_value = ((rows[0][3] + rows[1][4]) - (rows[0][4] + rows[1][3])) / 100000
-                        net_value_round = round(net_value, 2)
-                        data_table[rows[0][0]].append(net_value_round)
+            query = f"""
+                SELECT Date, OI_B_Contract, OI_S_Contract, OI_B_Amount, OI_S_Amount
+                FROM II_OP
+                WHERE Institutional='FOR' AND Date>='{start_date_str}';
+            """
+            rows = self.dbu_ii.db_execute_query(query, fetch="all")
+            idx = 0
+            while idx < len(rows):
+                chunk = rows[idx : idx + 2]
+                if len(chunk) == 2 and chunk[0][0] in data_table:
+                    net_value = (
+                        (chunk[0][3] + chunk[1][4]) - (chunk[0][4] + chunk[1][3])
+                    ) / 100000
+                    net_value_round = round(net_value, 2)
+                    data_table[chunk[0][0]].append(net_value_round)
+                idx += 2
 
             # Prepare JSON output
             output_data = []
@@ -612,16 +632,16 @@ class TaifexDataParser:
                     output_data.append([timestamp] + values[3:6] + [values[1]])
 
             # Write to JSON file
-            with open("data.json", "w") as f:
-                json.dump(output_data, f, indent=4)
-
-            LOGGER.info(f"Strategy data exported to data.json with {len(output_data)} entries")
+            self.exporter.export_to_json(output_data, "data.json")
+            self.logger.info(
+                f"Strategy data exported to data.json with {len(output_data)} entries"
+            )
 
             # Generate MTX strategy data
-            self._generate_mtx_strategy(ii_db_path, start_date_str)
+            self._generate_mtx_strategy(self.ii_db_path, start_date_str)
 
         except Exception as e:
-            LOGGER.error(f"Error generating strategy data: {e}")
+            self.logger.error(f"Error generating strategy data: {e}")
 
     def _generate_mtx_strategy(self, db_path: str, start_date_str: str) -> None:
         """
@@ -631,97 +651,83 @@ class TaifexDataParser:
             db_path: Path to the database
             start_date_str: Start date for analysis
         """
-        # try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
+        query = f"""
+            SELECT Date, OI_Net_Contract
+            FROM II_Fut
+            WHERE Date>='{start_date_str}' AND Fut='MTX'
+            ORDER BY Date ASC;
+        """
+        rows = DBUtils(db_path=db_path).db_execute_query(query, fetch="all")
+        # Process data in groups of 3 rows
+        export_info = []
+        row_counter = 1
+        idx = 0
+        import numpy as np
 
-            query = f"""
-                SELECT Date, OI_Net_Contract
-                FROM II_Fut
-                WHERE Date>='{start_date_str}' AND Fut='MTX'
-                ORDER BY Date ASC;
-            """
-            cursor.execute(query)
-
-            # Process data in groups of 3 rows
-            export_info = []
-            row_counter = 1
-
-            while True:
-                rows = cursor.fetchmany(3)
-                if not rows:
-                    break
-
-                # Convert to numpy array for easier processing
-                rows_array = np.array(rows)
-                contract_data = rows_array[:, 1].astype("int")
-
-                # Check if all rows have the same date
-                if len(set(rows_array[:, 0])) == 1:
-                    date_val = rows_array[0, 0]
-                    sum_val = int(np.sum(contract_data))
-
-                    # Calculate moving average after having at least 4 entries
-                    if row_counter > 4 and len(export_info) >= 4:
-                        # Get last 4 sum values plus current
-                        prev_data = np.array(export_info)
-                        last_sums = list(prev_data[:, 4][-4:].astype("int"))
-                        avg_val = float(np.mean(last_sums + [sum_val]))
-                    else:
-                        avg_val = 0
-
-                    # Calculate buy/sell signal after having at least 5 entries
-                    if row_counter > 5 and len(export_info) >= 1:
-                        prev_data = np.array(export_info)
-                        prev_avg = float(prev_data[:, 5][-1])
-                        bs_signal = round(sum_val - prev_avg, 1)
-                    else:
-                        bs_signal = 0
-
-                    # Get day of week (1=Monday, 7=Sunday)
-                    day_of_week = datetime.strptime(date_val, "%Y/%m/%d").isoweekday()
-
-                    # Append to results
-                    export_info.append(
-                        [
-                            date_val,  # Date
-                            *list(contract_data),  # Individual contract data
-                            sum_val,  # Sum of contracts
-                            avg_val,  # Moving average
-                            bs_signal,  # Buy/sell signal
-                            day_of_week,  # Day of week
-                        ]
-                    )
-
-                    row_counter += 1
-
-            # Convert to JSON format with timestamps
-            output_data = []
-            for row in export_info:
-                dt = datetime.strptime(row[0], "%Y/%m/%d") + timedelta(hours=23)
-                timestamp = int(time.mktime(dt.timetuple())) * 1000
-
-                # Format: [timestamp, contract_data1, contract_data2, contract_data3, buy_sell_signal]
-                II_contract = list(map(str, row[1:4]))
-                extra_data = list(map(float, row[5:6]))
-                output_data.append([timestamp] + II_contract + extra_data)
-
-            # assert False, output_data
-            # Write to JSON file
-            with open("data_MTX.json", "w") as f:
-                json.dump(output_data, f, indent=4)
-
-            LOGGER.info(f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries")
-
-        # except Exception as e:
-        #    print(f"Error generating MTX strategy data: {e}")
+        while idx < len(rows):
+            chunk = rows[idx : idx + 3]
+            if not chunk:
+                break
+            rows_array = np.array(chunk)
+            contract_data = rows_array[:, 1].astype("int")
+            # Check if all rows have the same date
+            if len(set(rows_array[:, 0])) == 1:
+                date_val = rows_array[0, 0]
+                sum_val = int(np.sum(contract_data))
+                # Calculate moving average after having at least 4 entries
+                if row_counter > 4 and len(export_info) >= 4:
+                    prev_data = np.array(export_info)
+                    last_sums = list(prev_data[:, 4][-4:].astype("int"))
+                    avg_val = float(np.mean(last_sums + [sum_val]))
+                else:
+                    avg_val = 0
+                # Calculate buy/sell signal after having at least 5 entries
+                if row_counter > 5 and len(export_info) >= 1:
+                    prev_data = np.array(export_info)
+                    prev_avg = float(prev_data[:, 5][-1])
+                    bs_signal = round(sum_val - prev_avg, 1)
+                else:
+                    bs_signal = 0
+                day_of_week = datetime.strptime(date_val, "%Y/%m/%d").isoweekday()
+                export_info.append(
+                    [
+                        date_val,  # Date
+                        *list(contract_data),  # Individual contract data
+                        sum_val,  # Sum of contracts
+                        avg_val,  # Moving average
+                        bs_signal,  # Buy/sell signal
+                        day_of_week,  # Day of week
+                    ]
+                )
+                row_counter += 1
+            idx += 3
+        # Convert to JSON format with timestamps
+        output_data = []
+        for row in export_info:
+            dt = datetime.strptime(row[0], "%Y/%m/%d") + timedelta(hours=23)
+            timestamp = int(time.mktime(dt.timetuple())) * 1000
+            II_contract = list(map(str, row[1:4]))
+            extra_data = list(map(float, row[5:6]))
+            output_data.append([timestamp] + II_contract + extra_data)
+        self.exporter.export_to_json(output_data, "data_MTX.json")
+        self.logger.info(
+            f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries"
+        )
 
 
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="TAIFEX Data Parser Tool")
-    parser.add_argument("-d", "--date", help="Target date in YYYYMMDD format (default: today)", type=str)
-    parser.add_argument("-i", "--item", help="Data type to fetch (Fut, OP, or SPOT)", type=str, required=False)
+    parser.add_argument(
+        "-d", "--date", help="Target date in YYYYMMDD format (default: today)", type=str
+    )
+    parser.add_argument(
+        "-i",
+        "--item",
+        help="Data type to fetch (Fut, OP, or SPOT)",
+        type=str,
+        required=False,
+    )
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -735,18 +741,21 @@ def main():
     """Main function to run the data parser"""
     args = parse_args()
 
-    # Initialize parser
-    parser = TaifexDataParser()
-
     # Initialize logger utility (can use a module name for finer control)
     global LOGGER  # Will be initialized later
     log_util = LoggerUtil(name="get_data", level=args.log_level)  # 20 = logging.INFO
     LOGGER = log_util.get_logger()
 
+    parser = TaifexDataParser(logger=LOGGER)
+
     # Set target date if provided
     target_date = None
     try:
-        target_date = parser._validate_and_convert_date(args.date) if args.date else date.today().strftime("%Y/%m/%d")
+        target_date = (
+            parser._validate_and_convert_date(args.date)
+            if args.date
+            else date.today().strftime("%Y/%m/%d")
+        )
     except ValueError as e:
         LOGGER.error(f"Error: {str(e)}")
         sys.exit(1)
@@ -793,4 +802,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
