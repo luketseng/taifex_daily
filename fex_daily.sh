@@ -1,16 +1,34 @@
 #!/bin/bash -xe
 
 today=$(date +%Y%m%d)
-#date_age=$(date +%Y%m%d -d "${1:-4} days ago")
 
-#if [ ! -n "$1" ]; then
-#if [ "$1" = "" ]; then
+# Check if parameter is empty
 if [ ! $1 ]; then
-    echo "you have not input a word!"
+    echo "you have not input a parameter!"
     date_age=$today
 else
-    echo "the word you input is $1"
-    date_age=$(date +%Y%m%d -d "${1} days ago")
+    # Check if parameter is in YYYYMMDD date format (8 digits)
+    if [[ "$1" =~ ^[0-9]{8}$ ]]; then
+        echo "the date you input is $1"
+        # Validate if the date is valid
+        if date -d "$1" >/dev/null 2>&1; then
+            date_age=$1
+        else
+            echo "Invalid date format: $1"
+            echo "Please use YYYYMMDD format (e.g., 20231215)"
+            exit 1
+        fi
+    # Check if parameter is a number (days ago, 1-365)
+    elif [[ "$1" =~ ^[1-9]$|^[1-9][0-9]$|^[1-2][0-9][0-9]$|^3[0-5][0-9]$|^36[0-5]$ ]]; then
+        echo "the days you input is $1"
+        date_age=$(date +%Y%m%d -d "${1} days ago")
+    else
+        echo "Invalid parameter: $1"
+        echo "Please input either:"
+        echo "  - Number of days ago (e.g., 4)"
+        echo "  - Date in YYYYMMDD format (e.g., 20231215)"
+        exit 1
+    fi
 fi
 
 echo "get $date_age~$today fex"
@@ -23,4 +41,3 @@ sleep 3
 find ~/git/taifex_daily/fut_rpt/ -mtime +15 -type f -name '*' -exec rm -rf {} \;
 find ~/git/taifex_daily/opt_rpt/ -mtime +15 -type f -name '*' -exec rm -rf {} \;
 find ~/git/taifex_web/web_json -mtime +0 -type f -name "*TX_*" -exec rm -rf {} \;
-

@@ -4,7 +4,7 @@ This project is designed to back up historical data from the Taiwan Futures Exch
 
 ## 🌐 Web Application
 
-- The data backed up by this project is visualized and accessible via the TAIFEX Web frontend:  
+- The data backed up by this project is visualized and accessible via the TAIFEX Web frontend:
   [http://zane.myftp.org/](http://zane.myftp.org/)
 
 ## 📦 Features
@@ -21,9 +21,11 @@ This project is designed to back up historical data from the Taiwan Futures Exch
 ```bash
 pip install -r requirements.txt
 ```
-Or, install `PyDrive` and `wget` directly:
+
+Or, install `PyDrive2` and `wget` directly:
+
 ```bash
-pip install PyDrive wget
+pip install PyDrive2 wget
 ```
 
 ### 2. Google Drive API Setup
@@ -36,7 +38,7 @@ This procedure requires several steps:
 4. Create credentials for a desktop application and download the `client_secrets.json` file.
 5. Place `client_secrets.json` in the `devices/` folder.
 
-**Note:**  
+**Note:**
 On first use, run any script that performs a Google Drive upload in an environment with a UI/browser. This will open a browser window for OAuth 2.0 authentication. Upon successful authentication, a `mycreds.txt` file will be created in the `devices/` folder for future access.
 
 ```
@@ -48,10 +50,10 @@ devices/
 ### 3. Database Files
 
 - The project uses `sqlite3` for database storage.
-- The database files (`FCT_DB.db`, `II_DB.db`) are **not provided by default**.  
+- The database files (`FCT_DB.db`, `II_DB.db`) are **not provided by default**.
   If you require the database files, please contact: luke360351@gmail.com
 
-- The database schema is referenced in `creat_tb_for_db`.  
+- The database schema is referenced in `creat_tb_for_db`.
   An initialization script will be provided in the future.
 
 ### 4. Example Usage
@@ -81,7 +83,7 @@ Automate the backup by adding to your crontab (example):
 
 ## 📃 License
 
-Personal, non-commercial use only.  
+Personal, non-commercial use only.
 For commercial usage or database files, please contact: luke360351@gmail.com
 
 ---
