@@ -1,7 +1,7 @@
 # Database files
-*.db
-FCT_DB.db
-II_DB.db
+#*.db
+#FCT_DB.db
+#II_DB.db
 
 # Python cache files
 __pycache__/
@@ -25,8 +25,8 @@ var/
 *.egg
 
 # Private credentials
-devices/client_secrets.json
-devices/mycreds.txt
+#devices/client_secrets.json
+#devices/mycreds.txt
 
 # Report folders (if version control not needed)
 fut_rpt/
