@@ -65,6 +65,17 @@ devices/
 # Example: Export TX futures data in 300-minute intervals (equivalent to one trading day(5-hours); day-level data)
 ./mining_rpt.py -e TX 300 -d 20190101
 
+# Export by session from FCT_DB.db. Trading days are represented by the regular day-session date.
+./mining_rpt.py -e TX 1 -d 20260828 --session day    # TX_20260828
+./mining_rpt.py -e TX 1 -d 20260828 --session night  # TX_20260828_night
+./mining_rpt.py -e TX 1 -d 20260828 --session full   # TX_20260828_full
+
+# The wrapper script accepts the same session selector.
+./fex_daily.sh 4 --session full
+
+# FUT_TX.json and FUT_MTX.json are generated only for the day session.
+# Night and full exports produce CSV files only.
+
 ```
 
 ### 5. Automation Example (crontab)

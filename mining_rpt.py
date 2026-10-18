@@ -39,7 +39,6 @@ from pathlib import Path
 import numpy as np
 
 # Import Local Module: log_util and Google Drive utility
-from devices.gdrive2 import gdrive
 from lib.log_util import LoggerUtil
 from lib.report_util import ReportUtil
 from lib.data_processing import DataProcessing
@@ -50,6 +49,7 @@ from lib.export_utils import ExportUtils
 # Set up module-level constants
 DEFAULT_DB_NAME = "FCT_DB.db"
 ITEMS = ("fut_rpt", "opt_rpt")
+SESSIONS = ("day", "night", "full")
 
 
 class TaifexReportMiner:
@@ -62,7 +62,11 @@ class TaifexReportMiner:
     """
 
     def __init__(
-        self, date: str = None, item: str = "fut_rpt", config_path: str = None
+        self,
+        date: str = None,
+        item: str = "fut_rpt",
+        config_path: str = None,
+        init_gdrive: bool = True,
     ):
         """
         Initialize the TAIFEX report miner
@@ -71,6 +75,7 @@ class TaifexReportMiner:
             date (str, optional): Date in format YYYY_MM_DD. Defaults to today.
             item (str, optional): Report type ('fut_rpt' or 'opt_rpt'). Defaults to 'fut_rpt'.
             config_path (str, optional): Path to config file. Defaults to config.json in script dir.
+            init_gdrive (bool, optional): Initialize Google Drive client for download/upload flows.
         """
         self.base_path = Path(os.path.dirname(__file__))
         self.db_path = self.base_path / DEFAULT_DB_NAME
@@ -91,7 +96,8 @@ class TaifexReportMiner:
         self._setup_report_info()
 
         # Initialize Google Drive client if needed
-        self._init_gdrive()
+        if init_gdrive:
+            self._init_gdrive()
 
         # Initialize downloader
         self.downloader = ReportUtil(report_info=self.report_info)
@@ -141,6 +147,8 @@ class TaifexReportMiner:
         """Initialize Google Drive client if not already initialized"""
         if "gdevice" not in globals():
             global gdevice
+            from devices.gdrive2 import gdrive
+
             gdevice = gdrive()
 
     def download_report(self, recover: bool = False) -> Path:
@@ -315,12 +323,10 @@ class TaifexReportMiner:
         # Insert new data
         return self.db_utils.db_store_generic(table, columns, candles)
 
-    def _get_data_for_day(self, symbol: str, interval: int, date: str) -> str:
+    def _get_day_rows(self, table: str, date: str) -> List[Tuple]:
         """
-        Get data for a specific day using DBUtils (generic method)
+        Get regular session rows for a trading day.
         """
-        # return self.db_utils.db_get_day_data(symbol, interval, date)
-        table = f"tw{symbol}"
         query = f"""
             SELECT * FROM {table}
             WHERE Date=?
@@ -328,10 +334,78 @@ class TaifexReportMiner:
             AND Time<='13:45:00'
             ORDER BY Date, Time;
         """
-        rows = self.db_utils.db_execute_query(query, (date,), fetch="all")
+        return self.db_utils.db_execute_query(query, (date,), fetch="all") or []
+
+    def _get_previous_night_start_date(self, table: str, date: str) -> Optional[str]:
+        """
+        Find the latest calendar date before the trading day that has night rows.
+        """
+        query = f"""
+            SELECT MAX(Date)
+            FROM {table}
+            WHERE Date<?
+            AND Time>'15:00:00';
+        """
+        row = self.db_utils.db_execute_query(query, (date,), fetch="one")
+        return row[0] if row and row[0] else None
+
+    def _get_night_rows(self, table: str, date: str) -> List[Tuple]:
+        """
+        Get night session rows for a trading day.
+
+        Trading days are represented by the regular session date. The night
+        session is the latest available 15:00-05:00 session before that date,
+        which allows weekends and exchange holidays to be skipped.
+        """
+        night_start_date = self._get_previous_night_start_date(table, date)
+        if not night_start_date:
+            LOGGER.debug(f"No night session found before {date}")
+            return []
+
+        night_end_date = (
+            datetime.strptime(night_start_date, "%Y/%m/%d") + timedelta(days=1)
+        ).strftime("%Y/%m/%d")
+        query = f"""
+            SELECT * FROM {table}
+            WHERE (Date=? AND Time>'15:00:00')
+            OR (Date=? AND Time<='05:00:00')
+            ORDER BY Date, Time;
+        """
+        return (
+            self.db_utils.db_execute_query(
+                query, (night_start_date, night_end_date), fetch="all"
+            )
+            or []
+        )
+
+    def _get_rows_for_session(
+        self, symbol: str, date: str, session: str
+    ) -> List[Tuple]:
+        """
+        Get database rows for the requested trading session.
+        """
+        table = f"tw{symbol}"
+        day_rows = self._get_day_rows(table, date)
+        if session == "day":
+            return day_rows
+
+        # A trading day is identified by its regular session date. If there is
+        # no regular session, skip the date to avoid duplicate weekend output.
+        if not day_rows:
+            LOGGER.debug(f"No regular session found for trading day {date}")
+            return []
+
+        night_rows = self._get_night_rows(table, date)
+        if session == "night":
+            return night_rows
+        return night_rows + day_rows
+
+    def _format_rows_for_interval(self, rows: List[Tuple], interval: int) -> str:
+        """
+        Format database rows as CSV text, aggregating when interval > 1.
+        """
         result = ""
         if not rows:
-            LOGGER.debug(f"Data for {date}: 0 rows")
             return result
         if interval == 1:
             for row in rows:
@@ -352,7 +426,19 @@ class TaifexReportMiner:
                 volume_val = int(np.sum(data_array[:, 6].astype("int")))
                 result += f"{date_val},{time_val},{open_val},{high_val},{low_val},{close_val},{volume_val}\n"
                 idx += interval
-        LOGGER.debug(f"Data for {date}: {len(result.splitlines())} rows")
+        return result
+
+    def _get_data_for_day(
+        self, symbol: str, interval: int, date: str, session: str = "day"
+    ) -> str:
+        """
+        Get data for a specific trading day using DBUtils.
+        """
+        rows = self._get_rows_for_session(symbol, date, session)
+        result = self._format_rows_for_interval(rows, interval)
+        LOGGER.debug(
+            f"Data for {date} session={session}: {len(result.splitlines())} rows"
+        )
         return result
 
     def export_data_to_txt(
@@ -361,6 +447,8 @@ class TaifexReportMiner:
         interval: int = None,
         start_date: datetime = None,
         end_date: datetime = None,
+        session: str = None,
+        export_json: bool = None,
     ) -> str:
         """
         Export data from database to text file
@@ -388,6 +476,12 @@ class TaifexReportMiner:
             symbol = args.export[0]
             interval = int(args.export[1])
 
+        if session is None:
+            session = getattr(args, "session", "day") if args is not None else "day"
+        session = session if session in SESSIONS else "day"
+        if export_json is None:
+            export_json = session == "day"
+
         # Validate symbol
         symbol = (
             "TX" if symbol not in self.report_info.get("symbol", ["TX"]) else symbol
@@ -411,7 +505,7 @@ class TaifexReportMiner:
                 start_date = date_range[0]
                 end_date = date_range[1]
         LOGGER.info(
-            f"Exporting data: symbol={symbol}, interval={interval}, "
+            f"Exporting data: symbol={symbol}, interval={interval}, session={session}, "
             f"date_range={start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
         )
 
@@ -422,8 +516,12 @@ class TaifexReportMiner:
             else start_date.strftime("%Y%m%d")
         )
 
-        # Output file path
-        output_path = f"{symbol}_{date_string}"
+        # Keep the default day-session filename compatible with existing jobs.
+        output_path = (
+            f"{symbol}_{date_string}"
+            if session == "day"
+            else f"{symbol}_{date_string}_{session}"
+        )
 
         # Write header to file
         header = "Date,Time,Open,High,Low,Close,Volume"
@@ -434,7 +532,9 @@ class TaifexReportMiner:
             LOGGER.debug(f"Processing date: {formatted_date}")
 
             # Get data for the day
-            day_data = self._get_data_for_day(symbol, interval, formatted_date)
+            day_data = self._get_data_for_day(
+                symbol, interval, formatted_date, session=session
+            )
 
             # Write data to file if not empty
             if day_data.strip():
@@ -445,8 +545,11 @@ class TaifexReportMiner:
         self.exporter.export_to_csv(header, all_data, output_path)
         LOGGER.info(f"Data exported to: {output_path}")
 
-        # Generate JSON data for the last 1.5 years
-        self._export_json_data(symbol, start_date)
+        # Generate visualization JSON only for the regular day-session export.
+        if export_json:
+            self._export_json_data(symbol, start_date)
+        else:
+            LOGGER.info(f"Skipping JSON export for session={session}")
 
         return output_path
 
@@ -454,7 +557,7 @@ class TaifexReportMiner:
         """
         Export data to JSON format for charting using ExportUtils
         """
-        LOGGER.info(f"Generating JSON data for symbol: {symbol}")
+        LOGGER.info(f"Generating day-session JSON data for symbol: {symbol}")
 
         # Output file path
         json_path = f"FUT_{symbol}.json"
@@ -477,7 +580,10 @@ class TaifexReportMiner:
                 while current_date <= end_date:
                     # Get only the last day's data to append
                     day_data = self._get_data_for_day(
-                        symbol, 300, current_date.strftime("%Y/%m/%d")
+                        symbol,
+                        300,
+                        current_date.strftime("%Y/%m/%d"),
+                        session="day",
                     )
 
                     # Process and append if not empty and not already in the file
@@ -512,7 +618,10 @@ class TaifexReportMiner:
                 current_date = start_date_dt
                 while current_date <= end_date:
                     day_data = self._get_data_for_day(
-                        symbol, 300, current_date.strftime("%Y/%m/%d")
+                        symbol,
+                        300,
+                        current_date.strftime("%Y/%m/%d"),
+                        session="day",
                     )
 
                     # Process if not empty
@@ -538,6 +647,7 @@ class TaifexReportMiner:
                             # Add the entry
                             data.append([timestamp] + [int(x) for x in fields[2:]])
                     current_date += timedelta(days=1)
+            data.sort(key=lambda row: row[0])
             self.exporter.export_to_json(data, json_path)
             LOGGER.info(f"JSON data exported to: {json_path} with {len(data)} entries")
             return json_path
@@ -576,6 +686,13 @@ def parse_arguments():
         help="Export data in format: SYMBOL INTERVAL (e.g., TX 300). Use with -d for date range.",
     )
     parser.add_argument(
+        "-s",
+        "--session",
+        choices=SESSIONS,
+        default="day",
+        help="Trading session to export: day, night, or full. Default: day.",
+    )
+    parser.add_argument(
         "--upload-recover",
         dest="recover",
         default=False,
@@ -612,22 +729,22 @@ def main():
     # Make args accessible globally
     # globals()["args"] = args
 
-    # Init TaifexReportMiner()
-    miner = TaifexReportMiner(date=args.date)
-
-    # Validate date range
-    start_date, end_date = miner._validate_date_range(args.date)
-    LOGGER.info(f"Arguments: {args}")
-
     # Handle export operation if requested
     if args.export is not None:
-        miner = TaifexReportMiner()
+        miner = TaifexReportMiner(init_gdrive=False)
         try:
             output_path = miner.export_data_to_txt()
             LOGGER.info(f"Export completed successfully to: {output_path}")
         except Exception as e:
             LOGGER.error(f"Export failed: {e}")
         sys.exit(0)
+
+    # Init TaifexReportMiner()
+    miner = TaifexReportMiner(date=args.date)
+
+    # Validate date range
+    start_date, end_date = miner._validate_date_range(args.date)
+    LOGGER.info(f"Arguments: {args}")
 
     # Process each date in the range
     current_date = start_date
