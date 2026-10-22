@@ -1,5 +1,9 @@
 from lib.log_util import LoggerUtil
 import json
+import os
+import stat
+import tempfile
+from pathlib import Path
 from typing import List, Dict, Any
 
 class ExportUtils:
@@ -36,14 +40,28 @@ class ExportUtils:
         Returns:
             Output file path
         """
+        temporary_path = None
         try:
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
+            destination = Path(output_path).resolve()
+            mode = stat.S_IMODE(destination.stat().st_mode) if destination.exists() else 0o644
+            # Serialize completely before replacing the published file.
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=destination.parent,
+                                             prefix=f".{destination.name}-", suffix=".tmp", delete=False) as f:
+                temporary_path = Path(f.name)
+                json.dump(data, f, indent=4, ensure_ascii=False, allow_nan=False)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.chmod(temporary_path, mode)
+            os.replace(temporary_path, destination)
             self.logger.info(f"Data exported to JSON: {output_path}")
             return output_path
         except Exception as e:
             self.logger.error(f"Failed to export JSON: {e}")
             raise
+        finally:
+            if temporary_path is not None and temporary_path.exists():
+                temporary_path.unlink()
 
     def export_strategy_json(self, strategy_data: List, output_path: str) -> str:
         """

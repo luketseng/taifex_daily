@@ -547,111 +547,41 @@ class TaifexReportMiner:
 
         # Generate visualization JSON only for the regular day-session export.
         if export_json:
-            self._export_json_data(symbol, start_date)
+            self._export_json_data(symbol, start_date, end_date)
         else:
             LOGGER.info(f"Skipping JSON export for session={session}")
 
         return output_path
 
-    def _export_json_data(self, symbol: str, start_date: str) -> str:
-        """
-        Export data to JSON format for charting using ExportUtils
-        """
+    def _export_json_data(self, symbol: str, start_date: datetime, end_date: datetime = None) -> str:
+        """Merge complete day-session candles by timestamp, including corrections."""
         LOGGER.info(f"Generating day-session JSON data for symbol: {symbol}")
-
-        # Output file path
-        json_path = f"FUT_{symbol}.json"
-
-        # Date range - use 1.5 years back from today if no file exists
-        end_date = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
-
-        # Initialize data list
-        data = []
+        json_path = Path(f"FUT_{symbol}.json")
+        end_date = end_date or datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
         try:
-            # If JSON file exists, load it and append only the latest data
-            if Path(json_path).exists():
-                with open(json_path, "r") as f:
-                    data = json.load(f)
-
-                # current_date = datetime.strptime('2025/05/06', '%Y/%m/%d')  # Default start date
-                # current_date = end_date
-                current_date = start_date
-                # assert False, (current_date, type(current_date))
-                while current_date <= end_date:
-                    # Get only the last day's data to append
-                    day_data = self._get_data_for_day(
-                        symbol,
-                        300,
-                        current_date.strftime("%Y/%m/%d"),
-                        session="day",
-                    )
-
-                    # Process and append if not empty and not already in the file
-                    if day_data.strip():
-                        LOGGER.info(
-                            f"Processing JSON data for {current_date.strftime('%Y-%m-%d')} to append"
-                        )
-                        for line in day_data.strip().splitlines():
-                            fields = line.split(",")
-                            date_str = fields[0]
-
-                            # Convert to timestamp (milliseconds)
-                            timestamp = int(
-                                time.mktime(
-                                    (
-                                        datetime.strptime(date_str, "%Y/%m/%d")
-                                        + timedelta(hours=23)
-                                    ).timetuple()
-                                )
-                                * 1000
-                            )
-
-                            # Check if data for this timestamp already exists
-                            if not any(str(timestamp) in str(entry) for entry in data):
-                                # Add the entry
-                                data.append([timestamp] + [int(x) for x in fields[2:]])
-                    # Move to next day
-                    current_date += timedelta(days=1)
-            else:
-                # Generate full data set
-                start_date_dt = datetime.strptime("2020/01/01", "%Y/%m/%d")
-                current_date = start_date_dt
-                while current_date <= end_date:
-                    day_data = self._get_data_for_day(
-                        symbol,
-                        300,
-                        current_date.strftime("%Y/%m/%d"),
-                        session="day",
-                    )
-
-                    # Process if not empty
-                    if day_data.strip():
-                        LOGGER.info(
-                            f"Processing JSON data for {current_date.strftime('%Y-%m-%d')}"
-                        )
-                        for line in day_data.strip().splitlines():
-                            fields = line.split(",")
-                            date_str = fields[0]
-
-                            # Convert to timestamp (milliseconds)
-                            timestamp = int(
-                                time.mktime(
-                                    (
-                                        datetime.strptime(date_str, "%Y/%m/%d")
-                                        + timedelta(hours=23)
-                                    ).timetuple()
-                                )
-                                * 1000
-                            )
-
-                            # Add the entry
-                            data.append([timestamp] + [int(x) for x in fields[2:]])
-                    current_date += timedelta(days=1)
-            data.sort(key=lambda row: row[0])
-            self.exporter.export_to_json(data, json_path)
+            # Existing history is retained, with legacy duplicates collapsed by date.
+            existing = json.loads(json_path.read_text(encoding="utf-8")) if json_path.exists() else []
+            data_by_date = {}
+            for row in existing:
+                if not isinstance(row, list) or len(row) != 6:
+                    raise ValueError(f"Invalid daily candle in {json_path}")
+                data_by_date[int(row[0])] = row
+            current_date = start_date if json_path.exists() else datetime(2020, 1, 1)
+            while current_date <= end_date:
+                rows = self._get_day_rows(f"tw{symbol}", current_date.strftime("%Y/%m/%d"))
+                if rows:
+                    # Aggregate the entire regular session into exactly one daily candle.
+                    timestamp = int(time.mktime((current_date.replace(hour=23, minute=0, second=0, microsecond=0)).timetuple()) * 1000)
+                    data_by_date[timestamp] = [
+                        timestamp, int(rows[0][2]), max(int(row[3]) for row in rows),
+                        min(int(row[4]) for row in rows), int(rows[-1][5]),
+                        sum(int(row[6]) for row in rows),
+                    ]
+                current_date += timedelta(days=1)
+            data = [data_by_date[key] for key in sorted(data_by_date)]
+            self.exporter.export_to_json(data, str(json_path))
             LOGGER.info(f"JSON data exported to: {json_path} with {len(data)} entries")
-            return json_path
-
+            return str(json_path)
         except Exception as e:
             LOGGER.error(f"Error exporting JSON data: {e}")
             raise

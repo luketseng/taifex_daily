@@ -41,6 +41,7 @@ from selenium.webdriver.chrome.service import Service
 from lib.log_util import LoggerUtil
 from lib.export_utils import ExportUtils
 from lib.db_utils import DBUtils
+from lib.foreign_positions import export_foreign_positions
 
 # Constants
 DB_NAME = "II_DB.db"
@@ -528,191 +529,115 @@ class TaifexDataParser:
             )
 
     def run_trading_strategy(self, target_date: str = None) -> None:
-        """
-        Calculate and export trading strategy data
-
-        Args:
-            target_date: Date to calculate strategy for (default: self.date)
-        """
+        """Rebuild strategy JSON by explicit trading-date and product keys."""
         date_str = target_date if target_date else self.date
-        start_date_str = datetime.strptime(DEFAULT_START_DATE, "%Y/%m/%d").strftime(
-            "%Y/%m/%d"
-        )
-
-        self.logger.info(
-            f"Calculating trading strategy from {start_date_str} to {date_str}"
-        )
-
+        start_date_str = datetime.strptime(DEFAULT_START_DATE, "%Y/%m/%d").strftime("%Y/%m/%d")
+        self.logger.info(f"Calculating trading strategy from {start_date_str} to {date_str}")
         try:
-            # Get market price data
-            query = f"""
-                SELECT Date, Time, Close
-                FROM twTX
-                WHERE Date>="{start_date_str}" AND (Time="13:30:00" OR Time="13:45:00")
-                ORDER BY Date, Time;
-            """
-            price_data = self.dbu_market.db_execute_query(query, fetch="all")
-
-            # Create a dictionary to hold all strategy data
-            data_table = {}
-            for date_val, time_val, close_val in price_data:
-                data_table[date_val] = [close_val]
-
-            # Get futures position data for foreign investors
-            query = f"""
-                SELECT Date, OI_Net_Contract
-                FROM II_Fut
-                WHERE Date>='{start_date_str}' AND Fut='TX' AND Institutional='FOR';
-            """
-            fut_data = self.dbu_ii.db_execute_query(query, fetch="all")
-
-            # Calculate position changes and profit/loss
-            prev_position = 0
-            for i, (date_val, position) in enumerate(fut_data):
-                if date_val not in data_table:
-                    continue
-
-                if i > 0:
-                    position_change = position - prev_position
-                    contract_value = (
-                        position_change * data_table[date_val][0] * 200
-                    )  # Contract size = 200
-                    total_value_bn = round(
-                        contract_value / 100000000, 2
-                    )  # Convert to billions
-                else:
-                    position_change = None
-                    total_value_bn = None
-
-                data_table[date_val].extend([position, position_change, total_value_bn])
-                prev_position = position
-
-            # Get spot market data
-            query = f"""
-                SELECT Date, SUM(TR_Net_Amount)
-                FROM II_SPOT
-                WHERE Date>='{start_date_str}' AND Institutional LIKE 'FOR%'
-                GROUP BY Date;
-            """
-            spot_data = self.dbu_ii.db_execute_query(query, fetch="all")
-
-            for date_val, amount in spot_data:
-                if date_val in data_table:
-                    # Convert to billions
-                    amount_bn = round(amount / 100000000, 2)
-                    data_table[date_val].append(amount_bn)
-
-            # Get options data
-            query = f"""
-                SELECT Date, OI_B_Contract, OI_S_Contract, OI_B_Amount, OI_S_Amount
-                FROM II_OP
-                WHERE Institutional='FOR' AND Date>='{start_date_str}';
-            """
-            rows = self.dbu_ii.db_execute_query(query, fetch="all")
-            idx = 0
-            while idx < len(rows):
-                chunk = rows[idx : idx + 2]
-                if len(chunk) == 2 and chunk[0][0] in data_table:
-                    net_value = (
-                        (chunk[0][3] + chunk[1][4]) - (chunk[0][4] + chunk[1][3])
-                    ) / 100000
-                    net_value_round = round(net_value, 2)
-                    data_table[chunk[0][0]].append(net_value_round)
-                idx += 2
-
-            # Prepare JSON output
-            output_data = []
-            for date_key, values in data_table.items():
-                if len(values) >= 6:  # Only include complete records
-                    # Convert date to timestamp (ms)
-                    dt = datetime.strptime(date_key, "%Y/%m/%d") + timedelta(hours=23)
-                    timestamp = int(time.mktime(dt.timetuple())) * 1000
-
-                    # Format: [timestamp, position_change, total_value_bn, spot_amount_bn, price]
-                    output_data.append([timestamp] + values[3:6] + [values[1]])
-
-            # Write to JSON file
-            self.exporter.export_to_json(output_data, "data.json")
-            self.logger.info(
-                f"Strategy data exported to data.json with {len(output_data)} entries"
+            # Keep the final available regular-session close for each date.
+            price_data = self.dbu_market.db_execute_query(
+                "SELECT Date, Time, Close FROM twTX WHERE Date>=? "
+                "AND Time IN ('13:30:00','13:45:00') ORDER BY Date, Time",
+                (start_date_str,), fetch="all",
             )
+            fut_data = self.dbu_ii.db_execute_query(
+                "SELECT Date, OI_Net_Contract FROM II_Fut "
+                "WHERE Date>=? AND Fut='TX' AND Institutional='FOR' ORDER BY Date",
+                (start_date_str,), fetch="all",
+            )
+            spot_data = self.dbu_ii.db_execute_query(
+                "SELECT Date, SUM(TR_Net_Amount) FROM II_SPOT "
+                "WHERE Date>=? AND Institutional LIKE 'FOR%' GROUP BY Date ORDER BY Date",
+                (start_date_str,), fetch="all",
+            )
+            option_data = self.dbu_ii.db_execute_query(
+                "SELECT Date, PC, OI_B_Amount, OI_S_Amount FROM II_OP "
+                "WHERE Date>=? AND OP='TXO' AND Institutional='FOR' "
+                "AND PC IN ('CALL','PUT') ORDER BY Date, PC",
+                (start_date_str,), fetch="all",
+            )
+            if any(rows is None for rows in (price_data, fut_data, spot_data, option_data)):
+                raise RuntimeError("Strategy source query failed; existing JSON preserved")
+            prices = {day: close for day, _, close in price_data}
+            positions = {}
+            for day, position in fut_data:
+                if day in positions:
+                    raise ValueError(f"Duplicate foreign TX position: {day}")
+                positions[day] = position
+            spot = dict(spot_data)
+            options = {}
+            for day, pc, buy_amount, sell_amount in option_data:
+                by_type = options.setdefault(day, {})
+                if pc in by_type:
+                    raise ValueError(f"Duplicate foreign TXO position: {day} {pc}")
+                by_type[pc] = (buy_amount, sell_amount)
 
-            # Generate MTX strategy data
+            output_data = []
+            prev_position = None
+            for day in sorted(positions):
+                position = positions[day]
+                position_change = None if prev_position is None else position - prev_position
+                prev_position = position
+                if day not in prices or day not in spot:
+                    continue
+                if set(options.get(day, {})) != {'CALL', 'PUT'}:
+                    self.logger.warning(f"Incomplete TXO position data for {day}; skipping strategy row")
+                    continue
+                # Contract size = 200; convert TWD to units of 100 million.
+                futures_amount = None if position_change is None else round(position_change * prices[day] * 200 / 100000000, 2)
+                spot_amount = round(spot[day] / 100000000, 2)
+                call_buy, call_sell = options[day]['CALL']
+                put_buy, put_sell = options[day]['PUT']
+                # Calls and puts contribute opposite directional exposure.
+                options_amount = round((call_buy + put_sell - call_sell - put_buy) / 100000, 2)
+                dt = datetime.strptime(day, "%Y/%m/%d") + timedelta(hours=23)
+                timestamp = int(time.mktime(dt.timetuple())) * 1000
+                # Preserve the existing frontend array contract.
+                output_data.append([timestamp, futures_amount, spot_amount, options_amount, position])
+            if not output_data:
+                raise ValueError("No complete strategy rows; existing JSON preserved")
+            self.exporter.export_to_json(output_data, "data.json")
+            self.logger.info(f"Strategy data exported to data.json with {len(output_data)} entries")
             self._generate_mtx_strategy(self.ii_db_path, start_date_str)
-
         except Exception as e:
             self.logger.error(f"Error generating strategy data: {e}")
+            raise
 
     def _generate_mtx_strategy(self, db_path: str, start_date_str: str) -> None:
-        """
-        Generate and export MTX strategy data
-
-        Args:
-            db_path: Path to the database
-            start_date_str: Start date for analysis
-        """
-        query = f"""
-            SELECT Date, OI_Net_Contract
-            FROM II_Fut
-            WHERE Date>='{start_date_str}' AND Fut='MTX'
-            ORDER BY Date ASC;
-        """
-        rows = DBUtils(db_path=db_path).db_execute_query(query, fetch="all")
-        # Process data in groups of 3 rows
-        export_info = []
-        row_counter = 1
-        idx = 0
-        import numpy as np
-
-        while idx < len(rows):
-            chunk = rows[idx : idx + 3]
-            if not chunk:
-                break
-            rows_array = np.array(chunk)
-            contract_data = rows_array[:, 1].astype("int")
-            # Check if all rows have the same date
-            if len(set(rows_array[:, 0])) == 1:
-                date_val = rows_array[0, 0]
-                sum_val = int(np.sum(contract_data))
-                # Calculate moving average after having at least 4 entries
-                if row_counter > 4 and len(export_info) >= 4:
-                    prev_data = np.array(export_info)
-                    last_sums = list(prev_data[:, 4][-4:].astype("int"))
-                    avg_val = float(np.mean(last_sums + [sum_val]))
-                else:
-                    avg_val = 0
-                # Calculate buy/sell signal after having at least 5 entries
-                if row_counter > 5 and len(export_info) >= 1:
-                    prev_data = np.array(export_info)
-                    prev_avg = float(prev_data[:, 5][-1])
-                    bs_signal = round(sum_val - prev_avg, 1)
-                else:
-                    bs_signal = 0
-                day_of_week = datetime.strptime(date_val, "%Y/%m/%d").isoweekday()
-                export_info.append(
-                    [
-                        date_val,  # Date
-                        *list(contract_data),  # Individual contract data
-                        sum_val,  # Sum of contracts
-                        avg_val,  # Moving average
-                        bs_signal,  # Buy/sell signal
-                        day_of_week,  # Day of week
-                    ]
-                )
-                row_counter += 1
-            idx += 3
-        # Convert to JSON format with timestamps
-        output_data = []
-        for row in export_info:
-            dt = datetime.strptime(row[0], "%Y/%m/%d") + timedelta(hours=23)
-            timestamp = int(time.mktime(dt.timetuple())) * 1000
-            II_contract = list(map(str, row[1:4]))
-            extra_data = list(map(float, row[5:6]))
-            output_data.append([timestamp] + II_contract + extra_data)
-        self.exporter.export_to_json(output_data, "data_MTX.json")
-        self.logger.info(
-            f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries"
+        """Rebuild MTX strategy with fixed dealer, investment trust, foreign columns."""
+        rows = DBUtils(db_path=db_path).db_execute_query(
+            "SELECT Date, Institutional, OI_Net_Contract FROM II_Fut "
+            "WHERE Date>=? AND Fut='MTX' AND Institutional IN ('DEA','INV','FOR') "
+            "ORDER BY Date, Institutional",
+            (start_date_str,), fetch="all",
         )
+        if rows is None:
+            raise RuntimeError("MTX source query failed; existing JSON preserved")
+        grouped = {}
+        for day, institution, position in rows:
+            by_institution = grouped.setdefault(day, {})
+            if institution in by_institution:
+                raise ValueError(f"Duplicate MTX position: {day} {institution}")
+            by_institution[institution] = position
+        output_data = []
+        totals = []
+        for day in sorted(grouped):
+            positions = grouped[day]
+            if set(positions) != {'DEA', 'INV', 'FOR'}:
+                self.logger.warning(f"Incomplete MTX institutions for {day}; skipping row")
+                continue
+            # Individual contract data always follows the frontend series order.
+            contracts = [int(positions[key]) for key in ('DEA', 'INV', 'FOR')]
+            totals.append(sum(contracts))
+            # Preserve the five-day moving average and its four-row warmup.
+            average = float(sum(totals[-5:]) / 5) if len(totals) >= 5 else 0.0
+            dt = datetime.strptime(day, "%Y/%m/%d") + timedelta(hours=23)
+            timestamp = int(time.mktime(dt.timetuple())) * 1000
+            output_data.append([timestamp] + list(map(str, contracts)) + [average])
+        if not output_data:
+            raise ValueError("No complete MTX strategy rows; existing JSON preserved")
+        self.exporter.export_to_json(output_data, "data_MTX.json")
+        self.logger.info(f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries")
 
 
 def parse_args():
@@ -796,6 +721,13 @@ def main():
     # Run strategy if needed
     # if args.item in ('Fut', 'OP'):
     #    parser.run_trading_strategy(target_date)
+
+    # Export only the requested day, preserving all existing position history.
+    positions_output = Path.cwd() / "foreign_positions.json"
+    if export_foreign_positions(parser.ii_db_path, target_date, positions_output):
+        LOGGER.info(f"Foreign positions exported for {target_date}: {positions_output}")
+    else:
+        LOGGER.warning(f"Incomplete foreign positions for {target_date}; existing JSON preserved")
 
     LOGGER.info("Data processing completed successfully")
 
