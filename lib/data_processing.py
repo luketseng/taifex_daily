@@ -59,45 +59,52 @@ class DataProcessing:
         if tick_array.size == 0:
             self.logger.warning("Tick array is empty. No candles to process.")
             return []
-        start_time = self.get_start_time(tick_array[0])
+        start_time = None
+        previous_tick_time = None
         candles = []
         temp_ticks = []
         total_ticks = len(tick_array)
         progress_step = max(1, total_ticks // 32)
         for i, tick in enumerate(tick_array, 1):
             tick_time = self.parse_tick_time(tick)
-            if self.is_tick_in_current_minute(tick_time, start_time):
-                temp_ticks.append(tuple(tick))
-                if i < total_ticks:
-                    continue
-            if temp_ticks:
-                candle = self.generate_candle(temp_ticks, start_time)
-                candles.append(candle)
+            if previous_tick_time is not None and tick_time < previous_tick_time:
+                raise ValueError("Tick data must be in chronological order")
+            previous_tick_time = tick_time
+            minute_end = self._minute_end_time(tick_time)
+            if start_time is not None and minute_end != start_time:
+                candles.append(self.generate_candle(temp_ticks, start_time))
                 temp_ticks = []
-            start_time = self.adjust_start_time(tick, start_time)
-            if self.show_progress:
+            start_time = minute_end
+            # Every raw record is a trade, including identical records and the
+            # first trade that triggers a minute transition. Never deduplicate.
+            temp_ticks.append(tuple(tick))
+            if self.show_progress and (i % progress_step == 0 or i == total_ticks):
                 self.update_progress_bar(i, total_ticks, progress_step)
+        # Flush the final occupied minute, even if it contains only one trade.
+        if temp_ticks:
+            candles.append(self.generate_candle(temp_ticks, start_time))
         if self.show_progress:
             sys.stdout.write("\n")  # Add newline after progress bar completes
             sys.stdout.flush()
         self.logger.info(f"Generated {len(candles)} candles from {total_ticks} ticks.")
         return candles
 
+    @staticmethod
+    def _minute_end_time(tick_time: datetime) -> datetime:
+        # Labels denote minute ends. Exact session closes belong to the final
+        # minute, even when the preceding minute had no trades.
+        if tick_time.strftime("%H%M%S") in ("050000", "134500"):
+            return tick_time
+        return tick_time.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
     def get_start_time(self, first_tick: np.ndarray) -> datetime:
-        first_tick_time = datetime.strptime(first_tick[3], "%H%M%S")
-        if first_tick_time.hour == 15:
-            return datetime.strptime(f"{first_tick[0]}150000", "%Y%m%d%H%M%S") + timedelta(minutes=1)
-        else:
-            return datetime.strptime(f"{first_tick[0]}084500", "%Y%m%d%H%M%S") + timedelta(minutes=1)
+        return self._minute_end_time(self.parse_tick_time(first_tick))
 
     def parse_tick_time(self, tick: np.ndarray) -> datetime:
         return datetime.strptime(f"{tick[0]}{tick[3]}", "%Y%m%d%H%M%S")
 
     def is_tick_in_current_minute(self, tick_time: datetime, start_time: datetime) -> bool:
-        return start_time - timedelta(minutes=1) <= tick_time < start_time or tick_time.time() in [
-            datetime.strptime("05:00:00", "%H:%M:%S").time(),
-            datetime.strptime("13:45:00", "%H:%M:%S").time(),
-        ]
+        return self._minute_end_time(tick_time) == start_time
 
     def generate_candle(self, ticks: List[Tuple], start_time: datetime) -> Tuple:
         temp_array = np.array(ticks)
@@ -122,7 +129,7 @@ class DataProcessing:
         )
 
     def adjust_start_time(self, tick: np.ndarray, start_time: datetime) -> datetime:
-        return datetime.strptime(f"{tick[0]}{tick[3][:4]}00", "%Y%m%d%H%M%S") + timedelta(minutes=1)
+        return self._minute_end_time(self.parse_tick_time(tick))
 
     def update_progress_bar(self, current_tick: int, total_ticks: int, progress_step: int):
         progress = (current_tick / total_ticks) * 100
