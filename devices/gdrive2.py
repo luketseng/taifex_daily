@@ -41,7 +41,8 @@ class gdrive:
                     assert False, "obj_req not found or item not only in gdrive"
             self.logger.info("id of '{}' dir: {}".format(self.item_obj[key]["title"], self.item_obj[key]["id"]))
 
-    def getObjByName(self, name):
+    def getObjByName(self, name, *, missing_ok=False):
+        """Find Drive objects; optional upload lookups may legitimately be empty."""
         ## get obj id by file name (API v3: name)
         # query = "name='{}' and trashed=false".format(name)
         query = "title='{}' and trashed=false".format(name)
@@ -51,7 +52,12 @@ class gdrive:
                 self.logger.warning("'{}' item not only in gdrive".format(name))
             return query_list
         else:
-            self.logger.warning("'{}' item not found item in gdrive".format(name))
+            if missing_ok:
+                self.logger.info(
+                    "'{}' does not exist in Google Drive yet; creating a new file".format(name)
+                )
+            else:
+                self.logger.warning("'{}' item not found item in gdrive".format(name))
         return None
 
     def GetContentFile(self, name, path, _mimetype="application/zip"):
@@ -73,7 +79,8 @@ class gdrive:
         if dst_obj != None:
             # delete file if file exist in gdrive
             fname = os.path.basename(path)
-            obj = self.getObjByName(fname)
+            # A file may be absent on its first upload; this is not a warning.
+            obj = self.getObjByName(fname, missing_ok=True)
             if obj is not None and recover:
                 for i in range(len(obj)):
                     self.logger.info("file({}) exist in gdrive: id={}".format(obj[i]["title"], obj[i]["id"]))
