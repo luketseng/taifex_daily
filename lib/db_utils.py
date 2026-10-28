@@ -80,6 +80,41 @@ class DBUtils:
         finally:
             self.db_close(conn)
 
+    def db_replace_candle_keys(self, table: str, columns: List[str], values: List[tuple]) -> bool:
+        """Replace supplied Date/Time keys atomically, retaining all other rows."""
+        if not values:
+            self.logger.warning(f"No values to insert into {table}")
+            return False
+        keys = [(row[0], row[1]) for row in values]
+        # Reject ambiguous input before touching existing data.
+        if any(not date or not time for date, time in keys) or len(set(keys)) != len(keys):
+            self.logger.error("Candle keys must be nonempty and unique")
+            return False
+        conn, cursor = self.db_connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # An indexed temporary key set avoids one full-table scan per minute
+            # and does not require a UNIQUE constraint on historical market data.
+            cursor.execute("CREATE TEMP TABLE candle_keys(Date, Time, PRIMARY KEY(Date, Time))")
+            cursor.executemany("INSERT INTO candle_keys VALUES (?, ?)", keys)
+            cursor.execute(
+                f"DELETE FROM {table} WHERE EXISTS ("
+                f"SELECT 1 FROM candle_keys k WHERE k.Date={table}.Date AND k.Time={table}.Time)"
+            )
+            placeholders = ','.join(['?'] * len(columns))
+            cursor.executemany(
+                f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})", values
+            )
+            conn.commit()
+            self.logger.info(f"Replaced {len(values)} candle keys in {table}")
+            return True
+        except sqlite3.Error as e:
+            conn.rollback()
+            self.logger.error(f"DB candle replacement error: {e}")
+            return False
+        finally:
+            self.db_close(conn)
+
     def db_delete(self, table: str, where: str, params: Optional[tuple] = None) -> bool:
         """
         Delete rows from a table with a WHERE clause.

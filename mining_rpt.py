@@ -294,9 +294,8 @@ class TaifexReportMiner:
 
     def _store_candles_in_db(self, candles: List[Tuple], symbol: str) -> bool:
         """
-        Store candle data in the database using DBUtils (generic method)
+        Store supplied minute keys atomically, preserving absent minutes.
         """
-        # return self.db_utils.db_store_candles(candles, symbol, self.report_info)
         if not candles:
             LOGGER.warning("No candles to store in database")
             return False
@@ -306,22 +305,9 @@ class TaifexReportMiner:
             symbol = "TX"
         table = f"tw{symbol}"
         columns = ["Date", "Time", "Open", "High", "Low", "Close", "Volume"]
-        # Delete existing data for the same date (and special session handling)
-        # Main delete: all <= last candle
-        delete_where = "Date=? AND Time<=?"
-        delete_params = (candles[-1][0], candles[-1][1])
-        self.db_utils.db_delete(table, delete_where, delete_params)
-        # Special handling for session transitions
-        if candles[0][1] == "15:01:00":
-            delete_where1 = "Date=? AND Time>=?"
-            delete_params1 = (candles[0][0], candles[0][1])
-            self.db_utils.db_delete(table, delete_where1, delete_params1)
-            if len(candles) > 839:
-                delete_where2 = "Date=? AND Time<=?"
-                delete_params2 = (candles[839][0], candles[839][1])
-                self.db_utils.db_delete(table, delete_where2, delete_params2)
-        # Insert new data
-        return self.db_utils.db_store_generic(table, columns, candles)
+        # Replace only supplied minute keys; absent minutes remain untouched.
+        # DBUtils performs deletion and insertion in one transaction.
+        return self.db_utils.db_replace_candle_keys(table, columns, candles)
 
     def _get_day_rows(self, table: str, date: str) -> List[Tuple]:
         """
