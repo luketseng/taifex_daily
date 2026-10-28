@@ -1,4 +1,5 @@
 # Database files
+.db-cleanup-backups/
 #*.db
 #FCT_DB.db
 #II_DB.db
