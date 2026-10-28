@@ -43,3 +43,5 @@ ENV/
 *.swp
 *.swo
 
+# Local deployment schedule
+/taifex_cron.txt
