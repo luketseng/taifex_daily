@@ -139,6 +139,20 @@ for root causes, validation rules, the October 2026 cleanup/backfill results,
 and unresolved history. Local recovery backups under `.db-cleanup-backups/`
 are excluded from version control.
 
+Institution rows are validated before transactional replacement; failed inserts
+roll back. Fetch, query and incomplete position-export failures propagate.
+
+`get_data.py` exits with **0** on success, **1** on execution failure, or **2**
+when the requested day's data is unavailable (explicit no-data or older result).
+Status 2 stops remaining work and preserves published JSON; earlier DB writes
+remain committed. The next cron run retries independently. Invalid responses
+and timeouts remain failures; status 2 does not identify holidays.
+
+Strategy rebuilds reject missing historical dates or malformed existing files;
+same-date corrections and new dates are allowed. Intentional deletion requires
+separate, authorized maintenance with backups. JSON replacement is atomic per
+file, not across the batch.
+
 Run the regression groups in an environment with the project dependencies:
 
 ```bash
@@ -147,6 +161,9 @@ python3 -m unittest discover -s tests -p 'test_tick_candles.py'
 python3 -m unittest discover -s tests -p 'test_gdrive_logging.py'
 python3 -m unittest discover -s tests -p 'test_json_exports.py'
 python3 -m unittest discover -s tests -p 'test_foreign_positions.py'
+python3 -m unittest discover -s tests -p 'test_institution_storage.py'
+python3 -m unittest discover -s tests -p 'test_failure_propagation.py'
+python3 -m unittest discover -s tests -p 'test_strategy_history.py'
 ```
 
 These checks use temporary databases and mocked Drive operations.

@@ -21,6 +21,8 @@ import re
 import json
 import time
 import argparse
+import ast
+import math
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Tuple, Any, Optional, Union
 from pathlib import Path
@@ -47,6 +49,10 @@ from lib.foreign_positions import export_foreign_positions
 DB_NAME = "II_DB.db"
 MARKET_DATA_DB = "FCT_DB.db"
 DEFAULT_START_DATE = "2020/01/01"
+
+
+class NoDataAvailable(Exception):
+    """A normal response has no data for the requested date."""
 
 
 class TaifexDataParser:
@@ -212,22 +218,43 @@ class TaifexDataParser:
                 elif item in ("Fut", "OP"):
                     self._fetch_futures_options_data(driver, item)
                 else:
-                    self.logger.warning(f"Unknown item type: {item}")
-                    return
+                    raise ValueError(f"Unknown item type: {item}")
 
-                # Process and store data
-                if self.lines_data:
-                    insert_data = self._prepare_data_for_db(item)
-                    if insert_data:
-                        self._store_data_in_db(*insert_data)
-                        self.logger.info(
-                            f"Successfully stored {item} data for {self.date}"
-                        )
-                else:
-                    self.logger.warning(f"No data retrieved for {item} on {self.date}")
+                # Missing content without an explicit no-data response is a failure.
+                if not self.lines_data:
+                    raise RuntimeError(f"Unrecognized empty response for {item} on {self.date}")
+                insert_data = self._prepare_data_for_db(item)
+                if not insert_data:
+                    raise ValueError(f"No valid {item} rows for {self.date}")
+                self._store_data_in_db(*insert_data)
+                self.logger.info(f"Successfully stored {item} data for {self.date}")
+
+        except NoDataAvailable:
+            raise
 
         except Exception as e:
             self.logger.error(f"Error fetching data from web: {e}")
+            raise
+
+    def _wait_for_data(self, driver, locator):
+        """Recognize explicit no-data responses without masking timeouts or layout errors."""
+        def ready(browser):
+            text = "".join(browser.find_element(By.TAG_NAME, "body").text.split())
+            if any(message in text for message in (
+                "查無資料", "查無符合條件", "沒有符合條件的資料", "無符合條件之資料",
+            )):
+                raise NoDataAvailable(f"No published {self.item} data for {self.date}")
+            return browser.find_element(*locator)
+        return WebDriverWait(driver, 10).until(ready)
+
+    def _check_result_date(self, result_date: str) -> None:
+        """Older valid results mean the requested date has not been published."""
+        actual = datetime.strptime(result_date, "%Y/%m/%d").date()
+        requested = datetime.strptime(self.date, "%Y/%m/%d").date()
+        if actual < requested:
+            raise NoDataAvailable(f"Requested {self.date}, but source returned {result_date}")
+        if actual != requested:
+            raise ValueError(f"Unexpected source date: {result_date}; requested {self.date}")
 
     def _fetch_spot_data(self, driver) -> None:
         """
@@ -243,9 +270,7 @@ class TaifexDataParser:
         try:
             driver.get(url)
             # Wait for the table to load
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "tr"))
-            )
+            self._wait_for_data(driver, (By.TAG_NAME, "tr"))
 
             # Extract table rows
             rows = driver.find_elements(By.TAG_NAME, "tr")
@@ -254,8 +279,11 @@ class TaifexDataParser:
                 self.logger.debug(row_list)
                 self.lines_data.append(row_list)
 
+        except NoDataAvailable:
+            raise
         except Exception as e:
             self.logger.error(f"Error fetching spot data: {e}")
+            raise
 
     def _fetch_futures_options_data(self, driver, item: str) -> None:
         """
@@ -293,15 +321,16 @@ class TaifexDataParser:
             search_button.click()
 
             # Wait for results to load
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "printhere"))
-            )
+            self._wait_for_data(driver, (By.ID, "printhere"))
 
             # Parse the data table
             self._parse_table_data(driver, item)
 
+        except NoDataAvailable:
+            raise
         except Exception as e:
             self.logger.error(f"Error fetching {item} data: {e}")
+            raise
 
     def _parse_table_data(self, driver, item: str) -> None:
         """
@@ -326,7 +355,7 @@ class TaifexDataParser:
             except Exception as e:
                 self.logger.error(f"Could not find date information: {e}")
                 self.logger.error("Exiting as no valid data found")
-                sys.exit(1)
+                raise RuntimeError("Missing result date") from e
 
             # Find and parse the content table
             content_element = driver.find_element(
@@ -361,6 +390,7 @@ class TaifexDataParser:
 
         except Exception as e:
             self.logger.error(f"Error parsing table data: {e}")
+            raise
 
     def _prepare_data_for_db(self, item: str) -> Tuple[str, str]:
         """
@@ -380,14 +410,12 @@ class TaifexDataParser:
         date_str = ""
 
         if item in ("Fut", "OP"):
-            # Check if we have the date in the data
-            if self.date not in self.lines_data[0]:
-                self.logger.warning(
-                    f"Expected date {self.date} not found in data: {self.lines_data[0]}"
-                )
-                return None
-
-            date_str = self.lines_data[0]
+            # A missing or malformed date is a parsing failure, not a holiday.
+            match = re.search(r"\d{4}/\d{1,2}/\d{1,2}", str(self.lines_data[0]))
+            if not match:
+                raise ValueError("Missing valid result date")
+            date_str = datetime.strptime(match.group(), "%Y/%m/%d").strftime("%Y/%m/%d")
+            self._check_result_date(date_str)
 
             # Process data rows - different number of rows for futures vs options
             data_range = (
@@ -447,12 +475,10 @@ class TaifexDataParser:
                         day = match.group(3)
                         date_str = f"{year}/{month}/{day}"
 
-                        # Verify date matches requested date
-                        if self.date not in date_str:
-                            self.logger.warning(
-                                f"Warning: Expected date {self.date} does not match data date {date_str}"
-                            )
-                            return None
+                        # Normalize dates before comparing with the requested day.
+                        date_str = datetime.strptime(date_str, "%Y/%m/%d").strftime("%Y/%m/%d")
+                        self._check_result_date(date_str)
+
                 else:
                     # Process market data row
                     ii_type = self.SYMBOL_MAP.get(row[0], "")
@@ -473,37 +499,39 @@ class TaifexDataParser:
         """
         Store the prepared data in the database using DBUtils
         """
+        if self.item not in {"Fut", "OP", "SPOT"}:
+            raise ValueError("Unsupported institution table")
         table_name = f"II_{self.item}"
-        # Delete existing data for this date first
-        self.dbu_ii.db_delete(table_name, "Date=?", (date_str,))
-        # Parse values_sql to list of tuples (assume values_sql is like: (a,b,c),(d,e,f))
-        import re
-
-        values = []
-        for match in re.finditer(r"\((.*?)\)", values_sql):
-            row = match.group(1)
-            # Remove quotes and split by comma
-            row = [
-                eval(x) if x.strip().startswith("'") or x.strip().startswith('"') else x
-                for x in row.split(",")
-            ]
-            values.append(tuple(row))
-        # Get column count from first row
+        # Parse the complete payload before touching existing rows.
+        try:
+            values = ast.literal_eval("[" + values_sql + "]")
+        except (SyntaxError, ValueError) as exc:
+            raise ValueError("Invalid institution payload") from exc
+        db = self.dbu_ii
+        colinfo = db.db_execute_query(f"PRAGMA table_info({table_name});", fetch="all")
+        if not colinfo:
+            raise RuntimeError(f"Cannot read schema for {table_name}")
+        columns = [col[1] for col in colinfo]
+        key_count = {"Fut": 3, "OP": 4, "SPOT": 2}[self.item]
         if not values:
-            self.logger.warning(f"No values to insert into {table_name}")
-            return
-        columns = [
-            f"col{i+1}" for i in range(len(values[0]))
-        ]  # Placeholder, ideally should match actual schema
-        # Try to get actual column names from DB
-        query = f"PRAGMA table_info({table_name});"
-        colinfo = self.dbu_ii.db_execute_query(query, fetch="all")
-        if colinfo:
-            columns = [col[1] for col in colinfo]
-        self.dbu_ii.db_store_generic(table_name, columns, values)
-        self.logger.info(
-            f"Successfully stored data for {date_str} in table {table_name}"
-        )
+            raise ValueError("Empty institution payload")
+        keys = set()
+        for row in values:
+            if not isinstance(row, tuple) or len(row) != len(columns) or row[0] != date_str:
+                raise ValueError("Invalid institution row width or date")
+            if any(not isinstance(value, str) or not value for value in row[:key_count]):
+                raise ValueError("Invalid institution key")
+            if any(type(value) not in (int, float) or not math.isfinite(value)
+                   for value in row[key_count:]):
+                raise ValueError("Invalid institution numeric value")
+            key = row[:key_count]
+            if key in keys:
+                raise ValueError("Duplicate institution key")
+            keys.add(key)
+        # Delete and insert share one transaction; failure preserves the old date.
+        if not db.db_store_generic(table_name, columns, values, "Date=?", (date_str,)):
+            raise RuntimeError(f"Failed replacing {table_name} for {date_str}")
+        self.logger.info(f"Successfully stored data for {date_str} in table {table_name}")
 
     def _validate_and_convert_date(self, date_str: str) -> str:
         """
@@ -527,6 +555,28 @@ class TaifexDataParser:
             raise ValueError(
                 f"Invalid date format. Please use YYYYMMDD format (e.g., 20240328). Error: {str(e)}"
             )
+
+    def _publish_strategy(self, output_data: List, output_path: str) -> None:
+        """Reject history loss before replacing a published strategy snapshot."""
+        path = Path(output_path)
+        if path.exists():
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(existing, list):
+                raise ValueError(f"Invalid strategy history in {output_path}")
+            existing_dates = set()
+            for row in existing:
+                if (not isinstance(row, list) or len(row) != 5
+                        or type(row[0]) is not int or row[0] in existing_dates):
+                    raise ValueError(f"Invalid or duplicate strategy date in {output_path}")
+                existing_dates.add(row[0])
+            missing = existing_dates - {row[0] for row in output_data}
+            if missing:
+                raise ValueError(
+                    f"Strategy history would lose {len(missing)} dates in {output_path}: "
+                    f"{sorted(missing)}; existing JSON preserved"
+                )
+        # Same-date corrections and new dates are permitted; deletion is separate maintenance.
+        self.exporter.export_to_json(output_data, output_path)
 
     def run_trading_strategy(self, target_date: str = None) -> None:
         """Rebuild strategy JSON by explicit trading-date and product keys."""
@@ -596,7 +646,7 @@ class TaifexDataParser:
                 output_data.append([timestamp, futures_amount, spot_amount, options_amount, position])
             if not output_data:
                 raise ValueError("No complete strategy rows; existing JSON preserved")
-            self.exporter.export_to_json(output_data, "data.json")
+            self._publish_strategy(output_data, "data.json")
             self.logger.info(f"Strategy data exported to data.json with {len(output_data)} entries")
             self._generate_mtx_strategy(self.ii_db_path, start_date_str)
         except Exception as e:
@@ -636,7 +686,7 @@ class TaifexDataParser:
             output_data.append([timestamp] + list(map(str, contracts)) + [average])
         if not output_data:
             raise ValueError("No complete MTX strategy rows; existing JSON preserved")
-        self.exporter.export_to_json(output_data, "data_MTX.json")
+        self._publish_strategy(output_data, "data_MTX.json")
         self.logger.info(f"MTX strategy data exported to data_MTX.json with {len(output_data)} entries")
 
 
@@ -706,14 +756,19 @@ def main():
     # Use specific date for testing if needed
     # today_str = date(2025, 5, 2).strftime('%Y/%m/%d')
 
-    # Fetch futures data
-    parser.fetch_data_from_web(item="Fut", target_date=target_date)
+    try:
+        # Fetch futures data
+        parser.fetch_data_from_web(item="Fut", target_date=target_date)
 
-    # Fetch options data
-    parser.fetch_data_from_web(item="OP", target_date=target_date)
+        # Fetch options data
+        parser.fetch_data_from_web(item="OP", target_date=target_date)
 
-    # Fetch spot market data
-    parser.fetch_data_from_web(item="SPOT", target_date=target_date)
+        # Fetch spot market data
+        parser.fetch_data_from_web(item="SPOT", target_date=target_date)
+
+    except NoDataAvailable as exc:
+        LOGGER.warning(f"No data for requested date; exports skipped, existing files preserved: {exc}")
+        sys.exit(2)
 
     # Run trading strategy calculations
     parser.run_trading_strategy()
@@ -727,7 +782,7 @@ def main():
     if export_foreign_positions(parser.ii_db_path, target_date, positions_output):
         LOGGER.info(f"Foreign positions exported for {target_date}: {positions_output}")
     else:
-        LOGGER.warning(f"Incomplete foreign positions for {target_date}; existing JSON preserved")
+        raise RuntimeError(f"Incomplete foreign positions for {target_date}; existing JSON preserved")
 
     LOGGER.info("Data processing completed successfully")
 

@@ -75,6 +75,7 @@ class DBUtils:
             self.logger.info(f"Inserted {len(values)} rows into {table}")
             return True
         except sqlite3.Error as e:
+            conn.rollback()
             self.logger.error(f"DB insert error: {e}")
             return False
         finally:

@@ -320,7 +320,10 @@ class TaifexReportMiner:
             AND Time<='13:45:00'
             ORDER BY Date, Time;
         """
-        return self.db_utils.db_execute_query(query, (date,), fetch="all") or []
+        rows = self.db_utils.db_execute_query(query, (date,), fetch="all")
+        if rows is None:
+            raise RuntimeError(f"Day-session query failed for {table} on {date}")
+        return rows
 
     def _get_previous_night_start_date(self, table: str, date: str) -> Optional[str]:
         """
@@ -653,6 +656,7 @@ def main():
             LOGGER.info(f"Export completed successfully to: {output_path}")
         except Exception as e:
             LOGGER.error(f"Export failed: {e}")
+            sys.exit(1)
         sys.exit(0)
 
     # Init TaifexReportMiner()
