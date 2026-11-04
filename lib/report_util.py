@@ -89,7 +89,10 @@ class ReportUtil:
         """
         try:
             with zipfile.ZipFile(file_path, "r") as zip_file:
-                zip_file.testzip()
+                damaged_member = zip_file.testzip()
+                if damaged_member is not None:
+                    # Preserve the source for inspection; it must not be imported.
+                    raise ValueError(f"ZIP member failed CRC: {damaged_member}")
             self.logger.info(f"Successfully verified ZIP file: {file_path}")
             return True
         except zipfile.BadZipFile:
