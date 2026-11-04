@@ -134,10 +134,8 @@ Absent keys remain untouched; existing historical data is not automatically
 repaired by installing the code changes. Multi-minute exports group source
 rows by count, rather than resampling to fixed wall-clock intervals.
 
-See [Data integrity repairs and remaining historical scope](docs/data-integrity-repair.md)
-for root causes, validation rules, the October 2026 cleanup/backfill results,
-and unresolved history. Local recovery backups under `.db-cleanup-backups/`
-are excluded from version control.
+Local operational notes under `docs/` and recovery backups under
+`.db-cleanup-backups/` are excluded from version control.
 
 Institution rows are validated before transactional replacement; failed inserts
 roll back. Fetch, query and incomplete position-export failures propagate.

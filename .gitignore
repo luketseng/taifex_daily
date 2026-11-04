@@ -1,48 +1,50 @@
 # Database files
 .db-cleanup-backups/
-#*.db
-#FCT_DB.db
-#II_DB.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Python cache files
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
 
 # Private credentials
-#devices/client_secrets.json
-#devices/mycreds.txt
+/devices/client_secrets.json
+/devices/mycreds.txt
 
-# Report folders (if version control not needed)
+# Generated report folders
 fut_rpt/
 opt_rpt/
 
 # Other common ignore items
-.DS_Store
 .env
-.venv
-venv/
-ENV/
-.idea/
-.vscode/
+.botdock.env
+.botdock-state/
+botdock_notify.log
 *.swp
-*.swo
 
 # Local deployment schedule
 /taifex_cron.txt
+
+# Local BotDock integration
+/BOTDOCK.local.md
+/botdock.json
+/botdock_app.py
+/notify_logs.py
+/notify_logs.sh
+/tests/test_notify_logs.py
+
+# Local agent configuration and session notes
+/.agents/
+/.AGENTS.bk.md
+#/TODO.md
+#/NIGHT_DUPLICATE_REVIEW.md
+
+# Local documentation and operational notes
+#/docs/
+
+# Local run logs and audit artifacts
+#/log.txt
+#/log2.txt
+#/reviews/
