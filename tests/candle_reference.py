@@ -1,4 +1,4 @@
-"""Independent raw-trade reference for standard TX/MTX minute-session audits."""
+"""Independent raw-trade reference supporting TX/MTX parser regression tests."""
 from collections import defaultdict
 from datetime import datetime, timedelta
 

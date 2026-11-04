@@ -9,7 +9,7 @@ import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from lib.data_processing import DataProcessing
-from lib.candle_validation import validate_session_candles, read_report_ticks
+from tests.candle_reference import validate_session_candles, read_report_ticks
 
 
 def tick(stamp, price=100, quantity=2):
