@@ -667,6 +667,7 @@ def main():
     LOGGER.info(f"Arguments: {args}")
 
     # Process each date in the range
+    failure_count = 0
     current_date = start_date
     while current_date <= end_date:
         date_str = current_date.strftime("%Y_%m_%d")
@@ -682,21 +683,31 @@ def main():
                 miner.download_report(recover=args.recover)
 
                 # Upload to Google Drive
-                miner.upload_to_gdrive(recover=args.recover)
+                if not miner.upload_to_gdrive(recover=args.recover):
+                    failure_count += 1
+                    LOGGER.error(f"Failed to upload {item} report for {date_str}")
 
                 # For futures reports, process data for each symbol
                 if item == "fut_rpt":
                     for symbol in miner.report_info.get("symbol", ["TX"]):
                         try:
-                            miner.parse_report_to_db(symbol)
+                            if not miner.parse_report_to_db(symbol):
+                                failure_count += 1
+                                LOGGER.error(f"Failed to process {symbol} data for {date_str}: parser returned failure")
                         except Exception as e:
-                            LOGGER.error(f"Failed to process {symbol} data: {e}")
+                            failure_count += 1
+                            LOGGER.error(f"Failed to process {symbol} data for {date_str}: {e}")
             except Exception as e:
+                failure_count += 1
                 LOGGER.error(f"Failed to process {item} for {date_str}: {e}")
 
         # Move to next date
         current_date += timedelta(days=1)
 
+    # Independent reports still run, but later successes cannot hide a failure.
+    if failure_count:
+        LOGGER.error(f"TAIFEX data mining finished with {failure_count} failed operation(s)")
+        sys.exit(1)
     LOGGER.info("TAIFEX data mining completed successfully")
 
 

@@ -148,6 +148,15 @@ Status 2 stops remaining work and preserves published JSON; earlier DB writes
 remain committed. The next cron run retries independently. Invalid responses
 and timeouts remain failures; status 2 does not identify holidays.
 
+The `mining_rpt.py` report workflow exits **0** only when all requested report
+downloads, Drive backups and candle imports succeed. A `False` result or an
+exception during backup/import, or a report download failure, makes the run
+exit **1**, even if later independent symbols, reports or dates succeed.
+Those independent tasks still run; a failed backup does not prevent importing
+an otherwise valid local report. Earlier committed DB writes are retained.
+Separately scheduled export jobs are not automatically cancelled by this status.
+The existing `-e` export mode retains its success/failure exit codes.
+
 Strategy rebuilds reject missing historical dates or malformed existing files;
 same-date corrections and new dates are allowed. Intentional deletion requires
 separate, authorized maintenance with backups. JSON replacement is atomic per
@@ -164,6 +173,7 @@ python3 -m unittest discover -s tests -p 'test_foreign_positions.py'
 python3 -m unittest discover -s tests -p 'test_institution_storage.py'
 python3 -m unittest discover -s tests -p 'test_failure_propagation.py'
 python3 -m unittest discover -s tests -p 'test_strategy_history.py'
+python3 -m unittest discover -s tests -p 'test_mining_pipeline_status.py'
 ```
 
 These checks use temporary databases and mocked Drive operations.
