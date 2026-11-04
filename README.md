@@ -162,6 +162,14 @@ same-date corrections and new dates are allowed. Intentional deletion requires
 separate, authorized maintenance with backups. JSON replacement is atomic per
 file, not across the batch.
 
+The four standard dashboard filenames (`FUT_TX.json`, `FUT_MTX.json`,
+`data.json`, `data_MTX.json`) are validated before replacement: row shapes,
+finite numbers, unique ascending dates at 23:00 Asia/Taipei, OHLC relationships,
+nonnegative whole-contract volume and strategy field units/types. Invalid
+output preserves the old file. Explicit daily strategy runs also require the
+requested date's TX sources and all three MTX institutions before publishing
+either strategy. Duplicate foreign spot keys are rejected before aggregation.
+
 Run the regression groups in an environment with the project dependencies:
 
 ```bash

@@ -38,6 +38,69 @@ class JsonExportTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text()), [1])
         self.assertEqual(sorted(p.name for p in self.root.iterdir()), ['data.json'])
 
+    def test_nonfinite_numbers_preserve_published_json_and_remove_temporary_files(self):
+        timestamp = int(datetime(2026, 10, 19, 23).timestamp() * 1000)
+        for name in ('generic.json', 'FUT_TX.json', 'data.json', 'data_MTX.json'):
+            path = self.root / name
+            path.write_text('[1]\n')
+            for value in (float('nan'), float('inf'), -float('inf')):
+                rows = {
+                    'generic.json': {'nested': [value]},
+                    'FUT_TX.json': [[timestamp, 100, 110, 90, 105, value]],
+                    'data.json': [[timestamp, None, value, 3, -4]],
+                    'data_MTX.json': [[timestamp, '-1', '2', '-3', value]],
+                }[name]
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    ExportUtils(LOG).export_to_json(rows, str(path))
+                self.assertEqual(path.read_bytes(), b'[1]\n')
+                self.assertFalse(list(self.root.glob('.*.tmp')))
+
+    def test_dashboard_contract_rejects_bad_rows_preserving_previous_bytes(self):
+        timestamp = int(datetime(2026, 10, 19, 23).timestamp() * 1000)
+        candle = [timestamp, 100, 110, 90, 105, 0]
+        invalid = [
+            ('FUT_TX.json', []),
+            ('FUT_TX.json', [candle, candle]),
+            ('FUT_TX.json', [[timestamp + 86400000] + candle[1:], candle]),
+            ('FUT_TX.json', [[timestamp + 1] + candle[1:]]),
+            ('FUT_TX.json', [[str(timestamp)] + candle[1:]]),
+            ('FUT_TX.json', [[True] + candle[1:]]),
+            ('FUT_TX.json', [[timestamp, 100, 99, 90, 105, 0]]),
+            ('FUT_MTX.json', [[timestamp, 100, 110, 106, 105, 0]]),
+            ('FUT_TX.json', [[timestamp, '100', 110, 90, 105, 0]]),
+            ('FUT_TX.json', [[timestamp, 100, 110, 90, 105, -1]]),
+            ('FUT_TX.json', [[timestamp, 100, 110, 90, 105, 1.5]]),
+            ('FUT_TX.json', [[timestamp, 100, 110, 90, 105, True]]),
+            ('data.json', [[timestamp, None, '2', 3, 4]]),
+            ('data.json', [[timestamp, None, 2, 3, 4.5]]),
+            ('data.json', [[timestamp, None, 2, 3, 4],
+                           [timestamp + 86400000, None, 2, 3, 4]]),
+            ('data_MTX.json', [[timestamp, '1.5', '2', '3', 0]]),
+            ('data_MTX.json', [[timestamp, 1, '2', '3', 0]]),
+            ('data_MTX.json', [[timestamp, '1', '2', '3', None]]),
+        ]
+        for name, rows in invalid:
+            with self.subTest(name=name, rows=rows):
+                path = self.root / name
+                path.write_text('["previous publication"]\n')
+                before = path.read_bytes()
+                with self.assertRaises(ValueError):
+                    ExportUtils(LOG).export_to_json(rows, str(path))
+                self.assertEqual(path.read_bytes(), before)
+                self.assertFalse(list(self.root.glob('.*.tmp')))
+
+    def test_dashboard_contract_accepts_zero_volume_and_signed_strategy_values(self):
+        timestamp = int(datetime(2026, 10, 19, 23).timestamp() * 1000)
+        for name, rows in [
+            ('FUT_TX.json', [[timestamp, 100, 100, 100, 100, 0]]),
+            ('data.json', [[timestamp, None, -2.5, 3.5, -4]]),
+            ('data_MTX.json', [[timestamp, '-1', '2', '-3', -0.4]]),
+        ]:
+            with self.subTest(name=name):
+                path = self.root / name
+                ExportUtils(LOG).export_to_json(rows, str(path))
+                self.assertEqual(json.loads(path.read_text()), rows)
+
     def test_daily_candle_export_overwrites_deduplicates_and_repeats(self):
         database = self.root / 'market.db'
         with sqlite3.connect(database) as connection:

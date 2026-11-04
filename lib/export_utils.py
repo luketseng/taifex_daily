@@ -1,4 +1,5 @@
 from lib.log_util import LoggerUtil
+from lib.json_validation import validate_dashboard_json
 import json
 import os
 import stat
@@ -49,6 +50,7 @@ class ExportUtils:
                                              prefix=f".{destination.name}-", suffix=".tmp", delete=False) as f:
                 temporary_path = Path(f.name)
                 json.dump(data, f, indent=4, ensure_ascii=False, allow_nan=False)
+                validate_dashboard_json(data, output_path)
                 f.write("\n")
                 f.flush()
                 os.fsync(f.fileno())

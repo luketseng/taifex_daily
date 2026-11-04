@@ -596,8 +596,8 @@ class TaifexDataParser:
                 (start_date_str,), fetch="all",
             )
             spot_data = self.dbu_ii.db_execute_query(
-                "SELECT Date, SUM(TR_Net_Amount) FROM II_SPOT "
-                "WHERE Date>=? AND Institutional LIKE 'FOR%' GROUP BY Date ORDER BY Date",
+                "SELECT Date, Institutional, TR_Net_Amount FROM II_SPOT "
+                "WHERE Date>=? AND Institutional LIKE 'FOR%' ORDER BY Date, Institutional",
                 (start_date_str,), fetch="all",
             )
             option_data = self.dbu_ii.db_execute_query(
@@ -614,7 +614,14 @@ class TaifexDataParser:
                 if day in positions:
                     raise ValueError(f"Duplicate foreign TX position: {day}")
                 positions[day] = position
-            spot = dict(spot_data)
+            spot = {}
+            spot_keys = set()
+            for day, institution, amount in spot_data:
+                key = (day, institution)
+                if key in spot_keys:
+                    raise ValueError(f"Duplicate foreign spot position: {day} {institution}")
+                spot_keys.add(key)
+                spot[day] = spot.get(day, 0) + amount
             options = {}
             for day, pc, buy_amount, sell_amount in option_data:
                 by_type = options.setdefault(day, {})
@@ -646,6 +653,21 @@ class TaifexDataParser:
                 output_data.append([timestamp, futures_amount, spot_amount, options_amount, position])
             if not output_data:
                 raise ValueError("No complete strategy rows; existing JSON preserved")
+            if target_date is not None:
+                target_timestamp = int(time.mktime(
+                    (datetime.strptime(target_date, "%Y/%m/%d") + timedelta(hours=23)).timetuple()
+                )) * 1000
+                if target_timestamp not in {row[0] for row in output_data}:
+                    raise ValueError(f"Incomplete TX strategy sources for {target_date}; existing JSON preserved")
+                # Check both outputs before either is published for an explicit daily run.
+                target_mtx = self.dbu_ii.db_execute_query(
+                    "SELECT Institutional FROM II_Fut WHERE Date=? AND Fut='MTX' "
+                    "AND Institutional IN ('DEA','INV','FOR')",
+                    (target_date,), fetch="all",
+                )
+                if (target_mtx is None or len(target_mtx) != 3
+                        or {row[0] for row in target_mtx} != {'DEA', 'INV', 'FOR'}):
+                    raise ValueError(f"Incomplete MTX strategy sources for {target_date}; existing JSON preserved")
             self._publish_strategy(output_data, "data.json")
             self.logger.info(f"Strategy data exported to data.json with {len(output_data)} entries")
             self._generate_mtx_strategy(self.ii_db_path, start_date_str)
@@ -771,7 +793,7 @@ def main():
         sys.exit(2)
 
     # Run trading strategy calculations
-    parser.run_trading_strategy()
+    parser.run_trading_strategy(target_date)
 
     # Run strategy if needed
     # if args.item in ('Fut', 'OP'):
